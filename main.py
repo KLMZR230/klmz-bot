@@ -29,9 +29,10 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # ==========================================
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile" 
 MODELO_CODIGO_GEMINI = 'gemini-2.0-flash-exp'
-VOZ_ID = "es-CO-SalomeNeural" 
-ARCHIVO_MEMORIA = "historial_chats.json"
 ADMIN_ID = None 
+
+# Regex para detectar emails en el texto
+EMAIL_REGEX = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
 
 # Inicializar clientes
 try:
@@ -41,19 +42,6 @@ try:
 except Exception as e:
     print(f"⚠️ Error Clientes: {e}")
 
-# Gemini Coder
-safety_settings = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
-gemini_coder = genai.GenerativeModel(
-    model_name=MODELO_CODIGO_GEMINI,
-    safety_settings=safety_settings,
-    system_instruction="Eres un experto Ingeniero de Software Senior."
-)
-
 # ==========================================
 # 🌐 SERVIDOR FLASK
 # ==========================================
@@ -61,7 +49,7 @@ app_flask = Flask('')
 
 @app_flask.route('/')
 def home():
-    return "<h1>KLMZ IA - Vigilante Activo 👁️</h1>"
+    return "<h1>KLMZ IA - Smart Admin 🧠</h1>"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -81,16 +69,12 @@ async def vigilar_usuarios(context: ContextTypes.DEFAULT_TYPE):
     if not ADMIN_ID: return
 
     try:
-        # CORRECCIÓN: La respuesta YA ES la lista
         users = supabase.auth.admin.list_users()
-        
         nuevos = []
         check_time = str(ultimo_chequeo)
 
         for user in users:
-            # Convertimos a string para comparar fácil
             user_time = str(user.created_at)
-            
             if user_time > check_time:
                 nuevos.append(user.email)
 
@@ -98,12 +82,8 @@ async def vigilar_usuarios(context: ContextTypes.DEFAULT_TYPE):
             mensaje = "🚨 **¡NUEVO USUARIO DETECTADO!** 🚨\n\n"
             for email in nuevos:
                 mensaje += f"👤 Email: `{email}`\n"
-            
-            # Actualizamos el reloj
             ultimo_chequeo = datetime.utcnow().isoformat()
-            
             await context.bot.send_message(chat_id=ADMIN_ID, text=mensaje, parse_mode="Markdown")
-
     except Exception as e:
         print(f"Error Loop: {e}")
 
@@ -112,53 +92,101 @@ async def vigilar_usuarios(context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 async def test_supabase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        await update.message.reply_text("🕵️‍♂️ Revisando conexión...")
-        
-        # CORRECCIÓN AQUÍ TAMBIÉN
+        await update.message.reply_text("🕵️‍♂️ Revisando lista de usuarios...")
         users = supabase.auth.admin.list_users()
         total = len(users)
+        msg = f"✅ **ESTADO BASE DE DATOS**\n👥 Total: `{total}`\n\n"
         
-        if total > 0:
-            # Ordenamos para ver el último
-            users.sort(key=lambda x: str(x.created_at), reverse=True)
-            mas_reciente = users[0]
-            
-            msg = (
-                f"✅ **CONEXIÓN EXITOSA**\n"
-                f"👥 Total Usuarios: `{total}`\n"
-                f"🆕 Último registrado: `{mas_reciente.email}`\n"
-                f"📅 Fecha: `{mas_reciente.created_at}`"
-            )
-        else:
-            msg = "✅ Conexión OK, pero lista vacía."
+        users.sort(key=lambda x: str(x.created_at), reverse=True)
+        top_5 = users[:5]
+        
+        for u in top_5:
+            msg += f"🔹 `{u.email}`\n"
             
         await update.message.reply_text(msg, parse_mode="Markdown")
-        
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: `{str(e)}`", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ Error: `{str(e)}`")
 
 # ==========================================
-# 🤖 CHAT
+# 🤖 CHAT INTELIGENTE (AQUÍ ESTÁ LA MAGIA)
 # ==========================================
 async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_txt = update.message.text
     if not user_txt: return
+    
+    user_id = update.effective_user.id
+    
+    # --- LÓGICA DE JEFE (Solo si eres Admin) ---
+    if user_id == ADMIN_ID:
+        # Buscamos si hay un email en el mensaje
+        email_match = re.search(EMAIL_REGEX, user_txt)
+        
+        if email_match:
+            email = email_match.group(0)
+            txt_lower = user_txt.lower()
+            
+            # --- CASO 1: BORRAR ---
+            if any(palabra in txt_lower for palabra in ["borrar", "eliminar", "quita", "borra", "mata"]):
+                await update.message.reply_text(f"🗑️ Entendido. Buscando a `{email}` para borrarlo...", parse_mode="Markdown")
+                try:
+                    users = supabase.auth.admin.list_users()
+                    uid = next((u.id for u in users if u.email == email), None)
+                    
+                    if uid:
+                        supabase.auth.admin.delete_user(uid)
+                        await update.message.reply_text(f"✅ Listo. El usuario `{email}` ha sido eliminado.", parse_mode="Markdown")
+                    else:
+                        await update.message.reply_text(f"❌ No encontré a nadie con el correo `{email}`.")
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Error técnico borrando: {e}")
+                return # IMPORTANTE: Detenemos aquí para que Groq no conteste
+
+            # --- CASO 2: CREAR ---
+            elif any(palabra in txt_lower for palabra in ["crear", "agrega", "nuevo", "registra", "mete"]):
+                # Intentamos adivinar la contraseña (la palabra después del email)
+                palabras = user_txt.split()
+                try:
+                    # Buscamos en qué posición está el email
+                    idx = -1
+                    for i, p in enumerate(palabras):
+                        if email in p:
+                            idx = i
+                            break
+                    
+                    # Si hay una palabra después del email, esa es la clave
+                    if idx != -1 and idx + 1 < len(palabras):
+                        password = palabras[idx+1]
+                        
+                        user = supabase.auth.admin.create_user({
+                            "email": email,
+                            "password": password,
+                            "email_confirm": True
+                        })
+                        await update.message.reply_text(f"✅ **Hecho.** Usuario creado:\n👤 `{email}`\n🔑 Clave: `{password}`", parse_mode="Markdown")
+                    else:
+                        await update.message.reply_text("⚠️ Entendí que quieres crear un usuario, pero me falta la contraseña.\nEscribe: `crear email contraseña`", parse_mode="Markdown")
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Error al crear (¿Quizás ya existe?): {e}")
+                return # Detenemos aquí
+
+    # --- CHAT NORMAL (Groq) ---
+    # Si no era una orden de admin, conversamos normal
     try:
         chat = groq_client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "Eres un asistente útil."},
+                {"role": "system", "content": "Eres KLMZ IA, un asistente leal y eficiente. Respondes breve y directo."},
                 {"role": "user", "content": user_txt}
             ],
             model=MODELO_CHAT_GROQ
         )
         resp = chat.choices[0].message.content
         await update.message.reply_text(resp)
-    except: await update.message.reply_text("Error procesando mensaje.")
+    except: await update.message.reply_text("Error conectando con mi cerebro (Groq).")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global ADMIN_ID
     ADMIN_ID = update.effective_user.id
-    await update.message.reply_text("🤖 **Vigilante Listo.**\nUsa `/test` para ver si veo tus usuarios.")
+    await update.message.reply_text("🫡 **A sus órdenes, Jefe.**\n\nPuedes pedirme:\n- \"Borra a tal@gmail.com\"\n- \"Crea a nuevo@gmail.com 123456\"\n- O simplemente charlar.")
 
 # ==========================================
 # 🚀 ARRANQUE

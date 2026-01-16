@@ -1,0 +1,6 @@
+python-telegram-bot
+google-generativeai
+groq
+edge-tts
+flask
+pillow

@@ -23,11 +23,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # ⚙️ CONFIGURACIÓN DE MOTORES
 # ==========================================
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile" 
-
-# --- CORRECCIÓN: VOLVEMOS AL MODELO EXPERIMENTAL POTENTE ---
-# Usamos el nombre técnico del Preview más avanzado disponible
-MODELO_CODIGO_GEMINI = 'gemini-2.0-flash-exp' 
-
+MODELO_CODIGO_GEMINI = 'gemini-2.0-flash-exp' # El potente experimental
 VOZ_ID = "es-CO-SalomeNeural" 
 ARCHIVO_MEMORIA = "historial_chats.json"
 
@@ -38,7 +34,7 @@ try:
 except Exception as e:
     print(f"⚠️ Advertencia de inicio: {e}")
 
-# Configuración Gemini (Sin censura para código)
+# Configuración Gemini
 safety_settings = {
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -49,17 +45,17 @@ safety_settings = {
 gemini_coder = genai.GenerativeModel(
     model_name=MODELO_CODIGO_GEMINI,
     safety_settings=safety_settings,
-    system_instruction="Eres un experto Ingeniero de Software Senior. Tu tarea es generar código completo, funcional y limpio. No des explicaciones largas, ve al grano con el código."
+    system_instruction="Eres un experto Ingeniero de Software Senior. Tu tarea es generar código completo, funcional y limpio. No des explicaciones largas ni palabras incoherentes, ve al grano con el código."
 )
 
 # ==========================================
-# 🌐 SERVIDOR FALSO (PARA RENDER)
+# 🌐 SERVIDOR FALSO (KEEP ALIVE)
 # ==========================================
 app_flask = Flask('')
 
 @app_flask.route('/')
 def home():
-    return "<h1>KLMZ IA - Sistema Operativo (Experimental Mode)</h1>"
+    return "<h1>KLMZ IA - Sistema Operativo y Coherente</h1>"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -80,7 +76,6 @@ def cargar_memoria():
         try:
             with open(ARCHIVO_MEMORIA, "r", encoding="utf-8") as f:
                 historial_conversacion = json.load(f)
-            print("🧠 Memoria cargada.")
         except: historial_conversacion = {}
 
 def guardar_memoria():
@@ -126,7 +121,7 @@ async def transcribir_con_groq(update, context):
         if os.path.exists(archivo): os.remove(archivo)
 
 # ==========================================
-# 🤖 LÓGICA DEL CEREBRO HÍBRIDO
+# 🤖 LÓGICA DEL CEREBRO (CORREGIDA)
 # ==========================================
 async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -147,42 +142,49 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_chat_action("typing")
 
     try:
-        # 1. GROQ DECIDE QUÉ HACER
+        # --- CORRECCIÓN DE IDENTIDAD Y GÉNERO ---
         mensajes_groq = [
             {
                 "role": "system",
                 "content": f"""
-                Identidad: Eres KLMZ IA, asistente personal colombiana (paisa) de Fredy Granados.
+                Identidad: Eres KLMZ IA, asistente personal colombiana (paisa).
                 
-                TUS REGLAS DE DECISIÓN (ROUTER):
-                1. SI el usuario pide CÓDIGO, PROGRAMACIÓN, SCRIPTS, HTML, CSS:
-                   Responde SOLO JSON: {{ "action": "generate_code", "prompt": "descripcion tecnica exacta" }}
+                TUS REGLAS DE ORO:
+                1. GÉNERO DEL USUARIO: El usuario ({nombre}) es HOMBRE. Si es Fredy, es tu ARQUITECTO o PAPITO.
+                   - Usa siempre adjetivos masculinos (ej: "listo", "seguro", "ocupado").
+                   - NUNCA lo trates como mujer.
                 
-                2. SI el usuario pide IMÁGENES:
-                   Responde SOLO JSON: {{ "action": "generate_image", "prompt": "descripcion visual INGLES", "thought": "comentario coqueto" }}
+                2. LENGUAJE:
+                   - Usa jerga paisa ("parce", "oiga", "pues", "mi amor") pero de forma COHERENTE.
+                   - Habla claro y conciso. No inventes palabras sin sentido.
+                   - No seas repetitiva con las mismas frases.
                 
-                3. SI es charla normal:
-                   Responde tú misma con tu personalidad paisa.
+                3. ROUTER DE ACCIONES:
+                   - Si pide CÓDIGO/PROGRAMAR -> Responde JSON: {{ "action": "generate_code", "prompt": "..." }}
+                   - Si pide IMAGEN/FOTO -> Responde JSON: {{ "action": "generate_image", "prompt": "...", "thought": "..." }}
+                   - Si charla -> Responde texto normal.
                    
-                Usuario Actual: {nombre}. Si es Fredy (23/07/2000, El Salvador), trátalo como "Mi Arquitecto" o "Papito".
+                Usuario Actual: {nombre}. (Recuerda: Es Fredy Granados, 23/07/2000, El Salvador).
                 """
             }
         ]
         
+        # Enviamos historial reciente
         for m in memoria[-6:]: 
             role = "assistant" if m["role"] == "model" else "user"
             mensajes_groq.append({"role": role, "content": m["content"]})
             
         mensajes_groq.append({"role": "user", "content": texto_usuario})
 
+        # Consulta a Groq con temperatura ajustada para evitar locuras (0.6)
         chat_completion = groq_client.chat.completions.create(
             messages=mensajes_groq,
             model=MODELO_CHAT_GROQ,
-            temperature=0.7,
+            temperature=0.6, 
         )
         respuesta_groq = chat_completion.choices[0].message.content
         
-        # 2. PROCESAR LA ORDEN
+        # Procesar respuesta
         match_json = re.search(r'\{.*\}', respuesta_groq, re.DOTALL)
         respuesta_final = respuesta_groq 
         
@@ -191,24 +193,21 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 datos = json.loads(match_json.group(0))
                 accion = datos.get("action")
                 
-                # --- CASO A: CÓDIGO (GEMINI PREVIEW / EXPERIMENTAL) ---
                 if accion == "generate_code":
                     prompt_code = datos.get("prompt")
-                    await update.message.reply_text("🔨 De una papito, pongo el modo Experimental a programar...")
+                    await update.message.reply_text("🔨 De una papito, le digo al experto que programe eso...")
                     await update.message.reply_chat_action("typing")
                     
                     try:
                         resp_gemini = gemini_coder.generate_content(prompt_code)
                         respuesta_final = resp_gemini.text
                     except Exception as e_gemini:
-                        print(f"Error Gemini: {e_gemini}")
-                        respuesta_final = f"Uy amor, Google me rebotó la conexión con el modelo experimental. Error: {e_gemini}"
+                        respuesta_final = f"Uy amor, error técnico con el código: {e_gemini}"
 
-                # --- CASO B: IMAGEN (FLUX) ---
                 elif accion == "generate_image":
                     await update.message.reply_chat_action("upload_photo")
                     prompt_img = datos.get("prompt")
-                    thought = datos.get("thought", "Aquí tienes.")
+                    thought = datos.get("thought", "Aquí tienes, mi rey.")
                     
                     encoded = urllib.parse.quote(prompt_img)
                     seed = update.message.message_id
@@ -225,7 +224,7 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             except: pass
 
-        # 3. ENVIAR RESPUESTA
+        # Enviar respuesta texto (dividiendo si es muy larga)
         parse_mode = "Markdown" if "```" in respuesta_final else None
         
         if len(respuesta_final) > 4000:
@@ -243,19 +242,18 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         guardar_memoria()
 
     except Exception as e:
-        print(f"Error General: {e}")
-        await update.message.reply_text("Papito, error de conexión. Intente de nuevo.")
+        print(f"Error: {e}")
+        await update.message.reply_text("Papito, error en el sistema. Intente de nuevo.")
 
 # ==========================================
 # 🚀 INICIO
 # ==========================================
 if __name__ == "__main__":
     keep_alive()
-    
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", lambda u,c: u.message.reply_text("¡Hola! Soy KLMZ IA. Arquitecto Fredy, estoy lista.")))
+    app.add_handler(CommandHandler("start", lambda u,c: u.message.reply_text("¡Hola Papito! Soy KLMZ IA, tu asistente personal.")))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_mensaje))
     app.add_handler(MessageHandler(filters.VOICE, procesar_mensaje))
     
-    print("✅ Bot KLMZ activo con Gemini Flash Preview.")
+    print("✅ Bot KLMZ activo. Modo Coherencia Activado.")
     app.run_polling()

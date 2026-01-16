@@ -28,16 +28,18 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 # ⚙️ CONFIGURACIÓN
 # ==========================================
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile" 
-MODELO_CODIGO_GEMINI = 'gemini-2.0-flash-exp'
 ADMIN_ID = None 
 
-# Regex para detectar emails en el texto
+# Regex para emails
 EMAIL_REGEX = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+
+# Listas de Palabras Gatillo (VOCABULARIO EXPANDIDO)
+PALABRAS_BORRAR = ["borrar", "eliminar", "elimina", "borra", "quita", "sacar", "saca", "funar", "banear", "baja", "destruye"]
+PALABRAS_CREAR = ["crear", "agrega", "nuevo", "registra", "mete", "anade", "añade", "pon", "inserta"]
 
 # Inicializar clientes
 try:
     groq_client = Groq(api_key=GROQ_API_KEY)
-    genai.configure(api_key=GEMINI_API_KEY)
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     print(f"⚠️ Error Clientes: {e}")
@@ -49,7 +51,7 @@ app_flask = Flask('')
 
 @app_flask.route('/')
 def home():
-    return "<h1>KLMZ IA - Smart Admin 🧠</h1>"
+    return "<h1>KLMZ IA - Admin Mode 2.0 🧠</h1>"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -108,7 +110,7 @@ async def test_supabase(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: `{str(e)}`")
 
 # ==========================================
-# 🤖 CHAT INTELIGENTE (AQUÍ ESTÁ LA MAGIA)
+# 🤖 CHAT INTELIGENTE MEJORADO
 # ==========================================
 async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_txt = update.message.text
@@ -116,7 +118,7 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = update.effective_user.id
     
-    # --- LÓGICA DE JEFE (Solo si eres Admin) ---
+    # --- LOGICA DE ADMIN ---
     if user_id == ADMIN_ID:
         # Buscamos si hay un email en el mensaje
         email_match = re.search(EMAIL_REGEX, user_txt)
@@ -126,34 +128,32 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
             txt_lower = user_txt.lower()
             
             # --- CASO 1: BORRAR ---
-            if any(palabra in txt_lower for palabra in ["borrar", "eliminar", "quita", "borra", "mata"]):
-                await update.message.reply_text(f"🗑️ Entendido. Buscando a `{email}` para borrarlo...", parse_mode="Markdown")
+            # Ahora revisamos la lista expandida
+            if any(palabra in txt_lower for palabra in PALABRAS_BORRAR):
+                await update.message.reply_text(f"🗑️ Entendido. Procediendo a eliminar a `{email}`...", parse_mode="Markdown")
                 try:
                     users = supabase.auth.admin.list_users()
                     uid = next((u.id for u in users if u.email == email), None)
                     
                     if uid:
                         supabase.auth.admin.delete_user(uid)
-                        await update.message.reply_text(f"✅ Listo. El usuario `{email}` ha sido eliminado.", parse_mode="Markdown")
+                        await update.message.reply_text(f"✅ **¡Hecho!** El usuario `{email}` fue eliminado correctamente.", parse_mode="Markdown")
                     else:
-                        await update.message.reply_text(f"❌ No encontré a nadie con el correo `{email}`.")
+                        await update.message.reply_text(f"⚠️ No encontré a nadie con el correo `{email}` en la base de datos.")
                 except Exception as e:
                     await update.message.reply_text(f"❌ Error técnico borrando: {e}")
-                return # IMPORTANTE: Detenemos aquí para que Groq no conteste
+                return # IMPORTANTE: Detenemos aquí
 
             # --- CASO 2: CREAR ---
-            elif any(palabra in txt_lower for palabra in ["crear", "agrega", "nuevo", "registra", "mete"]):
-                # Intentamos adivinar la contraseña (la palabra después del email)
+            elif any(palabra in txt_lower for palabra in PALABRAS_CREAR):
                 palabras = user_txt.split()
                 try:
-                    # Buscamos en qué posición está el email
                     idx = -1
                     for i, p in enumerate(palabras):
                         if email in p:
                             idx = i
                             break
                     
-                    # Si hay una palabra después del email, esa es la clave
                     if idx != -1 and idx + 1 < len(palabras):
                         password = palabras[idx+1]
                         
@@ -162,19 +162,18 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             "password": password,
                             "email_confirm": True
                         })
-                        await update.message.reply_text(f"✅ **Hecho.** Usuario creado:\n👤 `{email}`\n🔑 Clave: `{password}`", parse_mode="Markdown")
+                        await update.message.reply_text(f"✅ **Usuario Creado:**\n👤 `{email}`\n🔑 Clave: `{password}`", parse_mode="Markdown")
                     else:
-                        await update.message.reply_text("⚠️ Entendí que quieres crear un usuario, pero me falta la contraseña.\nEscribe: `crear email contraseña`", parse_mode="Markdown")
+                        await update.message.reply_text("⚠️ Detecté que quieres crear, pero me falta la contraseña.\nEjemplo: `agrega nuevo@mail.com 123456`", parse_mode="Markdown")
                 except Exception as e:
-                    await update.message.reply_text(f"❌ Error al crear (¿Quizás ya existe?): {e}")
+                    await update.message.reply_text(f"❌ Error al crear (¿Ya existe?): {e}")
                 return # Detenemos aquí
 
     # --- CHAT NORMAL (Groq) ---
-    # Si no era una orden de admin, conversamos normal
     try:
         chat = groq_client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "Eres KLMZ IA, un asistente leal y eficiente. Respondes breve y directo."},
+                {"role": "system", "content": "Eres KLMZ IA, el asistente personal de Fredy. Eres útil y directo."},
                 {"role": "user", "content": user_txt}
             ],
             model=MODELO_CHAT_GROQ
@@ -186,7 +185,7 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global ADMIN_ID
     ADMIN_ID = update.effective_user.id
-    await update.message.reply_text("🫡 **A sus órdenes, Jefe.**\n\nPuedes pedirme:\n- \"Borra a tal@gmail.com\"\n- \"Crea a nuevo@gmail.com 123456\"\n- O simplemente charlar.")
+    await update.message.reply_text("🫡 **Jefe Identificado.**\n\nPrueba decir:\n- \"Elimina a tal@gmail.com\"\n- \"Agrega a nuevo@gmail.com 123456\"")
 
 # ==========================================
 # 🚀 ARRANQUE

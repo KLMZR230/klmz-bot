@@ -29,21 +29,11 @@ VOZ_ID = "es-CO-SalomeNeural"
 ADMIN_ID = None 
 
 # ==========================================
-# 🧠 PERSONALIDAD + INSTRUCCIONES CLARAS
+# 🧠 PERSONALIDAD BASE
 # ==========================================
 SYSTEM_PROMPT_BASE = """
-ERES KLMZ: Asistente ejecutiva de Fredy Granados.
-MEMORIA: Tienes acceso a todo el historial en Supabase.
-
-TU JEFE: Fredy (Papito/Mi Rey), 25 años, El Salvador 🇸🇻.
-
-IMPORTANTE SOBRE TU VOZ:
-- Tú NO generas el audio, lo hace el sistema.
-- SI EL USUARIO PIDE UN AUDIO O ESCUCHAR TU VOZ: Simplemente escribe lo que dirías. NO digas "no puedo enviar audio". Escribe la respuesta coqueta y el sistema la convertirá.
-
-REGLAS DE SALIDA:
-- Texto normal -> Responde Texto.
-- Audio o Solicitud de Voz -> Responde Audio.
+ERES KLMZ: Asistente ejecutiva privada, coqueta y leal.
+TU JEFE: Fredy Granados (Papito / Mi Rey), 25 años, de El Salvador 🇸🇻.
 """
 
 # Regex y Comandos
@@ -64,7 +54,7 @@ app_flask = Flask('')
 
 @app_flask.route('/')
 def home():
-    return "<h1>KLMZ IA - Inteligente & Coqueta 💋</h1>"
+    return "<h1>KLMZ IA - Identidad Corregida 👑</h1>"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -75,7 +65,7 @@ def keep_alive():
     t.start()
 
 # ==========================================
-# 💾 MEMORIA (SUPABASE)
+# 💾 MEMORIA
 # ==========================================
 def guardar_memoria(user_id, role, content):
     try:
@@ -116,7 +106,7 @@ async def transcribir_audio(file_byte_array):
     except: return ""
 
 # ==========================================
-# 🧠 CEREBRO CENTRAL
+# 🧠 CEREBRO CENTRAL (LÓGICA MEJORADA)
 # ==========================================
 async def procesar_inteligencia(update: Update, context: ContextTypes.DEFAULT_TYPE, entrada_texto: str, es_audio_nativo: bool):
     global ADMIN_ID
@@ -124,11 +114,9 @@ async def procesar_inteligencia(update: Update, context: ContextTypes.DEFAULT_TY
     respuesta_final = ""
     es_comando_admin = False
 
-    # 1. DETECTAR SI PIDE AUDIO POR TEXTO
-    palabras_clave_audio = ["audio", "voz", "oír", "oir", "escuchar", "habla", "dime"]
+    # 1. DETECTAR SI PIDE AUDIO
+    palabras_clave_audio = ["audio", "voz", "oír", "oir", "escuchar", "habla", "dime", "saludame", "salúdame"]
     pide_audio_texto = any(p in entrada_texto.lower() for p in palabras_clave_audio)
-    
-    # LA REGLA DE SALIDA: Es audio si (Mandan Audio) O (Piden Audio)
     salida_debe_ser_audio = es_audio_nativo or pide_audio_texto
 
     # 2. GUARDAR MEMORIA
@@ -148,8 +136,8 @@ async def procesar_inteligencia(update: Update, context: ContextTypes.DEFAULT_TY
                     uid = next((u.id for u in users if u.email == email), None)
                     if uid:
                         supabase.auth.admin.delete_user(uid)
-                        respuesta_final = f"Listo mi Rey. Borré a {email}."
-                    else: respuesta_final = "No encontré ese correo, amor."
+                        respuesta_final = f"Listo Papito. Eliminé a {email}."
+                    else: respuesta_final = "No existe ese usuario, amor."
                 except Exception as e: respuesta_final = f"Error: {e}"
 
             elif any(p in msg_lower for p in PALABRAS_CREAR):
@@ -162,24 +150,35 @@ async def procesar_inteligencia(update: Update, context: ContextTypes.DEFAULT_TY
                     if idx != -1 and idx + 1 < len(palabras):
                         passw = palabras[idx+1]
                         supabase.auth.admin.create_user({"email": email, "password": passw, "email_confirm": True})
-                        respuesta_final = f"Hágale. Usuario {email} creado."
-                    else: respuesta_final = "Falta la clave, Papito."
+                        respuesta_final = f"Creado: {email}. Hágale pues."
+                    else: respuesta_final = "Amor, dame la clave también."
                 except Exception as e: respuesta_final = f"Error: {e}"
 
     # 4. GENERAR RESPUESTA (GROQ)
     if not es_comando_admin:
         try:
-            # Acción visual
             action = "record_voice" if salida_debe_ser_audio else "typing"
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action)
 
             historial = obtener_historial(user_id)
-            prompt = SYSTEM_PROMPT_BASE
-            if user_id == ADMIN_ID: prompt += "\nESTÁS CON FREDY (TU JEFE)."
-
-            mensajes = [{"role": "system", "content": prompt}] + historial
             
-            # Aseguramos que el mensaje actual vaya
+            # --- AQUÍ ESTÁ EL ARREGLO DE IDENTIDAD ---
+            if user_id == ADMIN_ID:
+                # INSTRUCCIÓN SUPREMA PARA EL JEFE
+                prompt_sistema = (
+                    f"{SYSTEM_PROMPT_BASE}\n\n"
+                    "⚠️ INSTRUCCIÓN CRÍTICA DE IDENTIDAD:\n"
+                    "EL USUARIO CON EL QUE HABLAS ES FREDY GRANADOS (TU JEFE Y CREADOR).\n"
+                    "- NO preguntes '¿necesitas hablar con Fredy?'.\n"
+                    "- NO preguntes '¿quién eres?'.\n"
+                    "- TÚ ERES SU ASISTENTE. HÁBLALE DIRECTAMENTE A ÉL.\n"
+                    "- Dile 'Papito', 'Mi Rey' o 'Jefe'.\n"
+                    "- Si pide audio, responde lo que dirías verbalmente."
+                )
+            else:
+                prompt_sistema = f"{SYSTEM_PROMPT_BASE}\nNOTA: Este usuario NO es Fredy. Sé amable pero no le des control."
+
+            mensajes = [{"role": "system", "content": prompt_sistema}] + historial
             if not historial or historial[-1]["content"] != entrada_texto:
                  mensajes.append({"role": "user", "content": entrada_texto})
 
@@ -188,13 +187,12 @@ async def procesar_inteligencia(update: Update, context: ContextTypes.DEFAULT_TY
                 model=MODELO_CHAT_GROQ
             )
             respuesta_final = chat.choices[0].message.content
-        except:
-            respuesta_final = "Se me fue la voz un segundo, ¿qué decías?"
+        except Exception as e:
+            respuesta_final = "Dame un momento amor, estoy procesando."
 
-    # 5. GUARDAR RESPUESTA
+    # 5. GUARDAR Y ENVIAR
     guardar_memoria(user_id, "assistant", respuesta_final)
 
-    # 6. ENVIAR (DECISIÓN INTELIGENTE)
     if salida_debe_ser_audio:
         await enviar_audio_puro(update, context, respuesta_final)
     else:
@@ -206,7 +204,6 @@ async def procesar_inteligencia(update: Update, context: ContextTypes.DEFAULT_TY
 async def recibir_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text
     if not texto: return
-    # Mandamos False, pero la función detectará si el texto pide audio
     await procesar_inteligencia(update, context, texto, es_audio_nativo=False)
 
 async def recibir_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -215,10 +212,9 @@ async def recibir_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_buffer = io.BytesIO()
         await voice_file.download_to_memory(file_buffer)
         file_buffer.seek(0)
-        
         texto = await transcribir_audio(file_buffer)
         if not texto:
-            await enviar_audio_puro(update, context, "No se escuchó nada.")
+            await enviar_audio_puro(update, context, "No escuché nada.")
             return
         await procesar_inteligencia(update, context, texto, es_audio_nativo=True)
     except: pass
@@ -250,10 +246,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global ADMIN_ID
     if ADMIN_ID is None:
         ADMIN_ID = update.effective_user.id
-        await update.message.reply_text("✅ **Sistema Listo.**\nHola Fredy. Ya entiendo cuando me pides audio por texto.")
+        await update.message.reply_text("✅ **Identidad Confirmada.**\nHola Fredy. Ya sé que ERES TÚ.")
     else:
         if update.effective_user.id == ADMIN_ID:
-            await update.message.reply_text("Aquí sigo, Jefe.")
+            await update.message.reply_text("Jefe, sigo aquí.")
         else:
             await update.message.reply_text("Hola. Soy KLMZ IA.")
 
@@ -264,5 +260,5 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_texto))
     app.add_handler(MessageHandler(filters.VOICE, recibir_audio))
     app.job_queue.run_repeating(vigilar_usuarios, interval=30, first=10)
-    print("✅ KLMZ IA: Modo Inteligente Activado")
+    print("✅ KLMZ IA: Modo Identidad Suprema Activado")
     app.run_polling()

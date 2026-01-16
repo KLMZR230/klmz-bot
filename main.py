@@ -15,8 +15,6 @@ import edge_tts
 # ==========================================
 # 🔐 CREDENCIALES (MODO SEGURO - NUBE)
 # ==========================================
-# El bot buscará estas llaves en la configuración de Render
-# NO ESCRIBAS LAS CLAVES AQUÍ PARA QUE GITHUB NO TE BLOQUEE
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -25,7 +23,11 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # ⚙️ CONFIGURACIÓN DE MOTORES
 # ==========================================
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile" 
-MODELO_CODIGO_GEMINI = 'gemini-3-flash-preview'
+
+# --- CORRECCIÓN: VOLVEMOS AL MODELO EXPERIMENTAL POTENTE ---
+# Usamos el nombre técnico del Preview más avanzado disponible
+MODELO_CODIGO_GEMINI = 'gemini-2.0-flash-exp' 
+
 VOZ_ID = "es-CO-SalomeNeural" 
 ARCHIVO_MEMORIA = "historial_chats.json"
 
@@ -36,7 +38,7 @@ try:
 except Exception as e:
     print(f"⚠️ Advertencia de inicio: {e}")
 
-# Configuración Gemini (Solo para código, sin filtros)
+# Configuración Gemini (Sin censura para código)
 safety_settings = {
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -47,20 +49,19 @@ safety_settings = {
 gemini_coder = genai.GenerativeModel(
     model_name=MODELO_CODIGO_GEMINI,
     safety_settings=safety_settings,
-    system_instruction="Eres un experto Ingeniero de Software Senior. Genera solo el código solicitado, limpio y eficiente."
+    system_instruction="Eres un experto Ingeniero de Software Senior. Tu tarea es generar código completo, funcional y limpio. No des explicaciones largas, ve al grano con el código."
 )
 
 # ==========================================
-# 🌐 SERVIDOR FALSO (PARA MANTENER VIVO EN RENDER)
+# 🌐 SERVIDOR FALSO (PARA RENDER)
 # ==========================================
 app_flask = Flask('')
 
 @app_flask.route('/')
 def home():
-    return "<h1>KLMZ IA - Sistema Operativo y Escuchando</h1>"
+    return "<h1>KLMZ IA - Sistema Operativo (Experimental Mode)</h1>"
 
 def run():
-    # Render usa la variable PORT, si no existe usa 8080
     port = int(os.environ.get("PORT", 8080))
     app_flask.run(host='0.0.0.0', port=port)
 
@@ -146,7 +147,7 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_chat_action("typing")
 
     try:
-        # 1. PREPARAR CONTEXTO PARA GROQ (EL JEFE)
+        # 1. GROQ DECIDE QUÉ HACER
         mensajes_groq = [
             {
                 "role": "system",
@@ -154,11 +155,11 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 Identidad: Eres KLMZ IA, asistente personal colombiana (paisa) de Fredy Granados.
                 
                 TUS REGLAS DE DECISIÓN (ROUTER):
-                1. SI el usuario pide CÓDIGO, PROGRAMACIÓN, SCRIPTS:
-                   Responde SOLO JSON: {{ "action": "generate_code", "prompt": "descripcion tecnica" }}
+                1. SI el usuario pide CÓDIGO, PROGRAMACIÓN, SCRIPTS, HTML, CSS:
+                   Responde SOLO JSON: {{ "action": "generate_code", "prompt": "descripcion tecnica exacta" }}
                 
-                2. SI el usuario pide IMÁGENES (fotos, dibujos):
-                   Responde SOLO JSON: {{ "action": "generate_image", "prompt": "descripcion visual INGLES detallada", "thought": "comentario coqueto al usuario" }}
+                2. SI el usuario pide IMÁGENES:
+                   Responde SOLO JSON: {{ "action": "generate_image", "prompt": "descripcion visual INGLES", "thought": "comentario coqueto" }}
                 
                 3. SI es charla normal:
                    Responde tú misma con tu personalidad paisa.
@@ -168,13 +169,12 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         ]
         
-        for m in memoria[-8:]:
+        for m in memoria[-6:]: 
             role = "assistant" if m["role"] == "model" else "user"
             mensajes_groq.append({"role": role, "content": m["content"]})
             
         mensajes_groq.append({"role": "user", "content": texto_usuario})
 
-        # 2. CONSULTAR A GROQ
         chat_completion = groq_client.chat.completions.create(
             messages=mensajes_groq,
             model=MODELO_CHAT_GROQ,
@@ -182,7 +182,7 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         respuesta_groq = chat_completion.choices[0].message.content
         
-        # 3. VERIFICAR SI HAY ORDEN JSON
+        # 2. PROCESAR LA ORDEN
         match_json = re.search(r'\{.*\}', respuesta_groq, re.DOTALL)
         respuesta_final = respuesta_groq 
         
@@ -191,14 +191,18 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 datos = json.loads(match_json.group(0))
                 accion = datos.get("action")
                 
-                # --- CASO A: CÓDIGO (GEMINI) ---
+                # --- CASO A: CÓDIGO (GEMINI PREVIEW / EXPERIMENTAL) ---
                 if accion == "generate_code":
                     prompt_code = datos.get("prompt")
-                    await update.message.reply_text("🔨 De una papito, pongo a trabajar a Gemini (el experto)...")
+                    await update.message.reply_text("🔨 De una papito, pongo el modo Experimental a programar...")
                     await update.message.reply_chat_action("typing")
                     
-                    resp_gemini = gemini_coder.generate_content(prompt_code)
-                    respuesta_final = resp_gemini.text
+                    try:
+                        resp_gemini = gemini_coder.generate_content(prompt_code)
+                        respuesta_final = resp_gemini.text
+                    except Exception as e_gemini:
+                        print(f"Error Gemini: {e_gemini}")
+                        respuesta_final = f"Uy amor, Google me rebotó la conexión con el modelo experimental. Error: {e_gemini}"
 
                 # --- CASO B: IMAGEN (FLUX) ---
                 elif accion == "generate_image":
@@ -221,9 +225,14 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             except: pass
 
-        # 4. ENVIAR RESPUESTA FINAL
+        # 3. ENVIAR RESPUESTA
         parse_mode = "Markdown" if "```" in respuesta_final else None
-        await update.message.reply_text(respuesta_final, parse_mode=parse_mode)
+        
+        if len(respuesta_final) > 4000:
+            for x in range(0, len(respuesta_final), 4000):
+                await update.message.reply_text(respuesta_final[x:x+4000], parse_mode=None)
+        else:
+            await update.message.reply_text(respuesta_final, parse_mode=parse_mode)
         
         if es_audio and "```" not in respuesta_final:
             clean_text = re.sub(r'[*_`#]', '', respuesta_final)
@@ -234,19 +243,19 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         guardar_memoria()
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error General: {e}")
         await update.message.reply_text("Papito, error de conexión. Intente de nuevo.")
 
 # ==========================================
 # 🚀 INICIO
 # ==========================================
 if __name__ == "__main__":
-    keep_alive() # Iniciar servidor falso para Render
+    keep_alive()
     
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", lambda u,c: u.message.reply_text("¡Hola! Soy KLMZ IA. Arquitecto Fredy, estoy lista.")))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_mensaje))
     app.add_handler(MessageHandler(filters.VOICE, procesar_mensaje))
     
-    print("✅ Bot KLMZ activo y seguro.")
+    print("✅ Bot KLMZ activo con Gemini Flash Preview.")
     app.run_polling()

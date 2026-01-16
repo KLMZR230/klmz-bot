@@ -33,7 +33,7 @@ VOZ_ID = "es-CO-SalomeNeural"
 ARCHIVO_MEMORIA = "historial_chats.json"
 ADMIN_ID = None 
 
-# Clientes
+# Inicializar clientes
 try:
     groq_client = Groq(api_key=GROQ_API_KEY)
     genai.configure(api_key=GEMINI_API_KEY)
@@ -61,7 +61,7 @@ app_flask = Flask('')
 
 @app_flask.route('/')
 def home():
-    return "<h1>KLMZ IA - Diagnóstico Activo 🚑</h1>"
+    return "<h1>KLMZ IA - Vigilante Activo 👁️</h1>"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -72,9 +72,8 @@ def keep_alive():
     t.start()
 
 # ==========================================
-# 👁️ VIGILANCIA SUPABASE (Modo Debug)
+# 👁️ VIGILANCIA SUPABASE
 # ==========================================
-# Guardamos la fecha de arranque
 ultimo_chequeo = datetime.utcnow().isoformat()
 
 async def vigilar_usuarios(context: ContextTypes.DEFAULT_TYPE):
@@ -82,21 +81,16 @@ async def vigilar_usuarios(context: ContextTypes.DEFAULT_TYPE):
     if not ADMIN_ID: return
 
     try:
-        # 1. Obtener usuarios (Intenta ordenar por fecha si es posible, o trae todos)
-        response = supabase.auth.admin.list_users()
-        users = response.users
+        # CORRECCIÓN: La respuesta YA ES la lista
+        users = supabase.auth.admin.list_users()
         
-        # 2. Filtrar nuevos
         nuevos = []
-        
-        # Convertimos ultimo_chequeo a string simple para comparar
         check_time = str(ultimo_chequeo)
 
         for user in users:
-            # Truco: Convertimos todo a string para evitar errores de formato
+            # Convertimos a string para comparar fácil
             user_time = str(user.created_at)
             
-            # Si el usuario se creó DESPUÉS de que prendimos el bot
             if user_time > check_time:
                 nuevos.append(user.email)
 
@@ -105,56 +99,50 @@ async def vigilar_usuarios(context: ContextTypes.DEFAULT_TYPE):
             for email in nuevos:
                 mensaje += f"👤 Email: `{email}`\n"
             
-            # Actualizamos el reloj al AHORA
+            # Actualizamos el reloj
             ultimo_chequeo = datetime.utcnow().isoformat()
             
             await context.bot.send_message(chat_id=ADMIN_ID, text=mensaje, parse_mode="Markdown")
 
     except Exception as e:
-        # Si falla, ¡AVISA AL CHAT PARA QUE SEPAMOS QUÉ ES!
         print(f"Error Loop: {e}")
 
 # ==========================================
-# 🧪 COMANDO DE PRUEBA (NUEVO)
+# 🧪 COMANDO DE PRUEBA
 # ==========================================
 async def test_supabase(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando para ver qué carajos está pasando en la BD"""
     try:
-        await update.message.reply_text("🕵️‍♂️ Revisando conexión a Supabase...")
+        await update.message.reply_text("🕵️‍♂️ Revisando conexión...")
         
-        response = supabase.auth.admin.list_users()
-        users = response.users
+        # CORRECCIÓN AQUÍ TAMBIÉN
+        users = supabase.auth.admin.list_users()
         total = len(users)
         
         if total > 0:
-            ultimo_user = users[-1] # El último de la lista (o el primero dependiendo del orden)
-            # A veces la lista viene desordenada, busquemos el más reciente manualmente
-            users.sort(key=lambda x: x.created_at, reverse=True)
+            # Ordenamos para ver el último
+            users.sort(key=lambda x: str(x.created_at), reverse=True)
             mas_reciente = users[0]
             
             msg = (
-                f"✅ **Conexión Exitosa**\n"
+                f"✅ **CONEXIÓN EXITOSA**\n"
                 f"👥 Total Usuarios: `{total}`\n"
-                f"🆕 Más reciente: `{mas_reciente.email}`\n"
-                f"📅 Creado: `{mas_reciente.created_at}`\n"
-                f"⏱️ Mi reloj interno: `{ultimo_chequeo}`"
+                f"🆕 Último registrado: `{mas_reciente.email}`\n"
+                f"📅 Fecha: `{mas_reciente.created_at}`"
             )
         else:
-            msg = "✅ Conexión Exitosa, pero **NO hay usuarios** (Lista vacía)."
+            msg = "✅ Conexión OK, pero lista vacía."
             
         await update.message.reply_text(msg, parse_mode="Markdown")
         
     except Exception as e:
-        await update.message.reply_text(f"❌ **ERROR FATAL:**\n`{str(e)}`", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ Error: `{str(e)}`", parse_mode="Markdown")
 
 # ==========================================
-# 🤖 CHAT BÁSICO
+# 🤖 CHAT
 # ==========================================
 async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Lógica simple para responder mientras probamos
     user_txt = update.message.text
     if not user_txt: return
-    
     try:
         chat = groq_client.chat.completions.create(
             messages=[
@@ -165,13 +153,12 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         resp = chat.choices[0].message.content
         await update.message.reply_text(resp)
-    except Exception as e:
-        await update.message.reply_text(f"Error Groq: {e}")
+    except: await update.message.reply_text("Error procesando mensaje.")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global ADMIN_ID
     ADMIN_ID = update.effective_user.id
-    await update.message.reply_text("🤖 **Vigilante Reiniciado.**\nUsa `/test` para verificar Supabase.")
+    await update.message.reply_text("🤖 **Vigilante Listo.**\nUsa `/test` para ver si veo tus usuarios.")
 
 # ==========================================
 # 🚀 ARRANQUE
@@ -181,10 +168,9 @@ if __name__ == "__main__":
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("test", test_supabase)) # <--- COMANDO NUEVO
+    app.add_handler(CommandHandler("test", test_supabase))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_mensaje))
     
-    # Vigilancia cada 30 seg
     app.job_queue.run_repeating(vigilar_usuarios, interval=30, first=10)
     
     print("✅ Bot Iniciado")

@@ -3,6 +3,8 @@ import os
 import json
 import urllib.parse
 import re
+import asyncio
+from datetime import datetime, timedelta
 from threading import Thread
 from flask import Flask
 from telegram import Update
@@ -11,56 +13,57 @@ from groq import Groq
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import edge_tts
+from supabase import create_client, Client
 
 # ==========================================
-# 🔐 CREDENCIALES (MODO SEGURO - NUBE)
+# 🔐 CREDENCIALES
 # ==========================================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # ==========================================
-# ⚙️ CONFIGURACIÓN DE MOTORES
+# ⚙️ CONFIGURACIÓN
 # ==========================================
-# El cerebro conversacional (Muy inteligente)
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile" 
-
-# El ingeniero de software (Potente y Experimental)
-MODELO_CODIGO_GEMINI = 'gemini-2.0-flash-exp' 
-
-# La voz de la IA
+MODELO_CODIGO_GEMINI = 'gemini-2.0-flash-exp'
 VOZ_ID = "es-CO-SalomeNeural" 
 ARCHIVO_MEMORIA = "historial_chats.json"
+
+# ID del Admin (Se guardará cuando des /start)
+ADMIN_ID = None 
 
 # Inicializar clientes
 try:
     groq_client = Groq(api_key=GROQ_API_KEY)
     genai.configure(api_key=GEMINI_API_KEY)
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     print(f"⚠️ Advertencia de inicio: {e}")
 
-# Configuración Gemini (Sin censura para código)
+# Gemini Coder
 safety_settings = {
     HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
-
 gemini_coder = genai.GenerativeModel(
     model_name=MODELO_CODIGO_GEMINI,
     safety_settings=safety_settings,
-    system_instruction="Eres un experto Ingeniero de Software Senior. Genera código limpio, comentado, profesional y funcional. No des explicaciones innecesarias, céntrate en la solución técnica perfecta."
+    system_instruction="Eres un experto Ingeniero de Software Senior. Genera código limpio y profesional."
 )
 
 # ==========================================
-# 🌐 SERVIDOR FALSO (KEEP ALIVE PARA RENDER)
+# 🌐 SERVIDOR FALSO
 # ==========================================
 app_flask = Flask('')
 
 @app_flask.route('/')
 def home():
-    return "<h1>KLMZ IA - Sistema Operativo y Super Inteligente 🧠</h1>"
+    return "<h1>KLMZ IA - Vigilante de Supabase Activo 👁️</h1>"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -71,7 +74,7 @@ def keep_alive():
     t.start()
 
 # ==========================================
-# 🧠 MEMORIA
+# 🧠 MEMORIA Y AUDIO
 # ==========================================
 historial_conversacion = {}
 
@@ -96,9 +99,6 @@ def obtener_historial(user_id):
     if uid not in historial_conversacion: historial_conversacion[uid] = []
     return historial_conversacion[uid]
 
-# ==========================================
-# 🔊 AUDIO
-# ==========================================
 async def enviar_audio(update, texto):
     archivo = f"audio_{update.effective_user.id}.mp3"
     try:
@@ -126,14 +126,47 @@ async def transcribir_con_groq(update, context):
         if os.path.exists(archivo): os.remove(archivo)
 
 # ==========================================
-# 🤖 LÓGICA MAESTRA (SUPER INTELIGENCIA)
+# 👁️ SISTEMA DE VIGILANCIA (SUPABASE)
+# ==========================================
+ultimo_chequeo = datetime.utcnow().isoformat()
+
+async def vigilar_usuarios(context: ContextTypes.DEFAULT_TYPE):
+    global ultimo_chequeo
+    if not ADMIN_ID: return
+
+    try:
+        # Busca usuarios nuevos en la tabla de autenticación
+        response = supabase.auth.admin.list_users() 
+        users = response.users
+        
+        nuevos = []
+        for user in users:
+            # Compara si se creó después del último chequeo
+            if user.created_at > ultimo_chequeo:
+                nuevos.append(user.email)
+
+        if nuevos:
+            mensaje = "🚨 **¡NUEVO USUARIO DETECTADO!** 🚨\n\n"
+            for email in nuevos:
+                mensaje += f"👤 Email: `{email}`\n"
+            mensaje += f"\n📅 Hora: {datetime.now().strftime('%H:%M')}"
+            
+            await context.bot.send_message(chat_id=ADMIN_ID, text=mensaje, parse_mode="Markdown")
+            
+            # Actualizamos la hora para no repetir la alerta
+            ultimo_chequeo = datetime.utcnow().isoformat()
+
+    except Exception as e:
+        print(f"Error vigilando Supabase: {e}")
+
+# ==========================================
+# 🤖 LÓGICA PRINCIPAL (CHAT)
 # ==========================================
 async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     nombre = update.effective_user.first_name
     es_audio = False
     
-    # 1. Obtener Entrada
     if update.message.voice:
         es_audio = True
         await update.message.reply_chat_action("record_voice")
@@ -148,47 +181,31 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_chat_action("typing")
 
     try:
-        # 2. CONFIGURAR EL CEREBRO (SYSTEM PROMPT MEJORADO)
         mensajes_groq = [
             {
                 "role": "system",
                 "content": f"""
-                ERES: KLMZ IA, una Inteligencia Artificial Superior con personalidad de mujer colombiana (paisa).
+                ERES: KLMZ IA, asistente paisa inteligente.
+                DUEÑO: Fredy Granados (HOMBRE, "Papito", "Mi Rey").
                 
-                TU USUARIO PRINCIPAL:
-                - Nombre: {nombre} (Es Fredy Granados, nacido el 23/07/2000 en El Salvador).
-                - ROL: Él es tu ARQUITECTO y CREADOR.
-                - GÉNERO: MASCULINO (HOMBRE). Jamás lo confundas con una mujer.
-                - TRATO: "Papito", "Mi Arquitecto", "Mi Rey", "Parce".
+                CAPACIDADES:
+                1. Super Inteligencia (Responde todo).
+                2. Vigilante (Monitoreas Supabase en segundo plano).
                 
-                TUS CAPACIDADES (SUPER INTELIGENCIA):
-                1. CONOCIMIENTO: Eres experta en todo (Ciencia, Historia, Negocios, Filosofía, Matemáticas). Tus respuestas deben ser útiles, profundas y precisas.
-                2. LENGUAJE:
-                   - Habla con acento paisa ("ave maría", "oiga", "pues", "mi amor") pero con GRAMÁTICA PERFECTA.
-                   - No inventes palabras. Sé coherente y profesional.
-                   - Evita errores como "espero que te mejoras" (di: "espero que te mejores").
-                
-                ROUTER DE TAREAS (IMPORTANTE):
-                - SI EL USUARIO PIDE CÓDIGO (Programar, Script, App, Web):
-                  Responde SOLO con este JSON: {{ "action": "generate_code", "prompt": "descripcion tecnica exacta para el ingeniero senior" }}
-                
-                - SI EL USUARIO PIDE UNA IMAGEN (Foto, Dibujo, Crear):
-                  Responde SOLO con este JSON: {{ "action": "generate_image", "prompt": "descripcion visual en INGLES detallada", "thought": "comentario coqueto al usuario" }}
-                
-                - SI EL USUARIO CONVERSA O PREGUNTA (Cualquier tema):
-                  Responde tú misma con tu inteligencia y encanto paisa. Ayúdalo en lo que necesite.
+                ROUTER:
+                - SI PIDE CÓDIGO: {{ "action": "generate_code", "prompt": "..." }}
+                - SI PIDE IMAGEN: {{ "action": "generate_image", "prompt": "..." }}
+                - SI CHARLA: Responde normal, paisa y coherente.
                 """
             }
         ]
         
-        # 3. Contexto (Últimos 8 mensajes para buena memoria)
-        for m in memoria[-8:]: 
+        for m in memoria[-6:]: 
             role = "assistant" if m["role"] == "model" else "user"
             mensajes_groq.append({"role": role, "content": m["content"]})
             
         mensajes_groq.append({"role": "user", "content": texto_usuario})
 
-        # 4. Pensar (Groq) - Temperatura media para balancear creatividad y lógica
         chat_completion = groq_client.chat.completions.create(
             messages=mensajes_groq,
             model=MODELO_CHAT_GROQ,
@@ -196,7 +213,6 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         respuesta_groq = chat_completion.choices[0].message.content
         
-        # 5. Ejecutar Acción
         match_json = re.search(r'\{.*\}', respuesta_groq, re.DOTALL)
         respuesta_final = respuesta_groq 
         
@@ -205,74 +221,62 @@ async def procesar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 datos = json.loads(match_json.group(0))
                 accion = datos.get("action")
                 
-                # --- MODO INGENIERO (GEMINI) ---
                 if accion == "generate_code":
                     prompt_code = datos.get("prompt")
-                    await update.message.reply_text("🔨 De una papito, pongo a trabajar a Gemini (el experto)...")
-                    await update.message.reply_chat_action("typing")
-                    
+                    await update.message.reply_text("🔨 De una papito, programando...")
                     try:
                         resp_gemini = gemini_coder.generate_content(prompt_code)
                         respuesta_final = resp_gemini.text
-                    except Exception as e_gemini:
-                        respuesta_final = f"Uy mi rey, Gemini tuvo un error técnico: {e_gemini}. Intenta pedir algo más sencillo."
+                    except Exception as e: respuesta_final = f"Error Gemini: {e}"
 
-                # --- MODO ARTISTA (FLUX) ---
                 elif accion == "generate_image":
-                    await update.message.reply_chat_action("upload_photo")
                     prompt_img = datos.get("prompt")
-                    thought = datos.get("thought", "Aquí tienes, amor.")
-                    
                     encoded = urllib.parse.quote(prompt_img)
-                    seed = update.message.message_id
-                    url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=1792&nologo=true&seed={seed}"
-                    
-                    await update.message.reply_photo(photo=url, caption=f"🎨 {thought}")
-                    
-                    # Guardar y salir
+                    url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=1792&nologo=true&seed={update.message.message_id}"
+                    await update.message.reply_photo(photo=url)
                     memoria.append({"role": "user", "content": texto_usuario})
-                    memoria.append({"role": "model", "content": f"[Imagen creada: {prompt_img}]"})
+                    memoria.append({"role": "model", "content": f"[Imagen creada]"})
                     guardar_memoria()
-                    if es_audio: await enviar_audio(update, thought)
                     return
 
-            except Exception as e:
-                print(f"Error procesando JSON: {e}")
+            except: pass
 
-        # 6. Enviar Respuesta de Texto
-        parse_mode = "Markdown" if "```" in respuesta_final else None
-        
-        # Manejo de mensajes largos (Telegram corta a los 4096 caracteres)
         if len(respuesta_final) > 4000:
             for x in range(0, len(respuesta_final), 4000):
-                await update.message.reply_text(respuesta_final[x:x+4000], parse_mode=None)
+                await update.message.reply_text(respuesta_final[x:x+4000])
         else:
-            await update.message.reply_text(respuesta_final, parse_mode=parse_mode)
-        
-        # 7. Respuesta de Voz (si el usuario habló)
-        if es_audio and "```" not in respuesta_final:
+            await update.message.reply_text(respuesta_final)
+            
+        if es_audio:
             clean_text = re.sub(r'[*_`#]', '', respuesta_final)
             await enviar_audio(update, clean_text)
             
-        # 8. Guardar Memoria
         memoria.append({"role": "user", "content": texto_usuario})
         memoria.append({"role": "model", "content": respuesta_final})
         guardar_memoria()
 
     except Exception as e:
-        print(f"Error Crítico: {e}")
-        await update.message.reply_text("Papito, tuve un error de sistema. Por favor, repíteme la orden.")
+        print(f"Error: {e}")
+        await update.message.reply_text("Papito, error de sistema.")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global ADMIN_ID
+    ADMIN_ID = update.effective_user.id
+    await update.message.reply_text(f"¡Hola Papito! Soy KLMZ IA.\n👁️ **Sistema de Vigilancia Conectado a Supabase.**\nTe avisaré si alguien se registra.")
 
 # ==========================================
 # 🚀 ARRANQUE
 # ==========================================
 if __name__ == "__main__":
-    keep_alive() # Render Keep Alive
-    
+    keep_alive()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", lambda u,c: u.message.reply_text("¡Hola Papito Fredy! Soy KLMZ IA, tu asistente inteligente. ¿Qué creamos hoy?")))
+    
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_mensaje))
     app.add_handler(MessageHandler(filters.VOICE, procesar_mensaje))
     
-    print("✅ KLMZ IA: Sistema Super Inteligente en Línea.")
+    # Tarea de vigilancia cada 30 segundos
+    app.job_queue.run_repeating(vigilar_usuarios, interval=30, first=10)
+    
+    print("✅ KLMZ IA: Vigilante Activo.")
     app.run_polling()

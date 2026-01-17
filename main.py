@@ -1,7 +1,7 @@
 import os
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import Thread
 from flask import Flask
 from telegram import Update
@@ -30,7 +30,7 @@ except Exception as e:
     print(f"⚠️ Error Clientes: {e}")
 
 # ==========================================
-# 🧠 PERSONALIDAD (PAISA + MORAZÁN)
+# 🧠 PERSONALIDAD
 # ==========================================
 SYSTEM_PROMPT = """
 ERES KLMZ: La asistente personal de Fredy Granados.
@@ -40,7 +40,6 @@ TU ORIGEN: Paisa (Medellín).
 ACTITUD:
 - Coqueta, "entradora", servicial.
 - Usas: "Ave María pues", "Mijo", "Mi Rey", "Papito", "Mor", "Hágale".
-- Si Fredy pregunta cosas personales, respondes con cariño.
 - Si un desconocido escribe: "Qué pena mor, yo solo atiendo al patrón Fredy. Visita: https://klmzx.netlify.app/"
 """
 
@@ -72,7 +71,7 @@ async def enviar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto
     except: pass
 
 # ==========================================
-# 🧠 CEREBRO LÓGICO (SIN ALUCINACIONES)
+# 🧠 CEREBRO LÓGICO
 # ==========================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -91,59 +90,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             entrada = trans.text
         except: pass
 
-    # Guardar entrada usuario
     guardar_memoria(user_id, "user", entrada)
     
     # ====================================================
-    # 🚨 ZONA TÉCNICA (DIRECTA A SUPABASE - SIN IA)
+    # 🚨 ZONA TÉCNICA (DIRECTA A SUPABASE)
     # ====================================================
     if user_id == ADMIN_ID:
         texto_lower = entrada.lower()
         
-        # LISTA DE COMANDOS DE REPORTE
         frases_ver = ["cuantos", "cuántos", "total", "cantidad", "ver usuarios", "listar", "registros", "quien se registro", "muestrame"]
         frases_borrar = ["borrar", "eliminar", "quita", "funar", "bórralos", "banea"]
 
-        # >>> ACCIÓN 1: REPORTE EXACTO (NO GROQ) <<<
+        # >>> ACCIÓN 1: REPORTE EXACTO <<<
         if any(f in texto_lower for f in frases_ver) and "usuario" in texto_lower:
             await context.bot.send_chat_action(chat_id=user_id, action="typing")
-            
             try:
-                # 1. Contar TOTAL (Método count='exact')
-                # IMPORTANTE: Esto cuenta filas en la tabla 'profiles'
+                # 1. Contar TOTAL
                 conteo = supabase.table("profiles").select("*", count="exact", head=True).execute()
                 total = conteo.count
                 
-                # 2. Traer los últimos 10 REALES
-                res = supabase.table("profiles").select("email, created_at").order("created_at", desc=True).limit(10).execute()
+                # 2. Traer los últimos 10 (USANDO updated_at)
+                # ⚠️ CORREGIDO: Usamos 'updated_at' porque 'created_at' no existe en tu tabla
+                res = supabase.table("profiles").select("email, updated_at").order("updated_at", desc=True).limit(10).execute()
                 users = res.data
                 
-                # CONSTRUIMOS EL MENSAJE MANUALMENTE (Para que la IA no invente)
                 msg = f"💎 **REPORTE REAL (BASE DE DATOS)** 💎\n\n"
                 msg += f"📊 **Total en tabla 'profiles':** `{total}`\n"
                 msg += f"⬇️ **Últimos Registrados:**\n"
                 
                 if users:
                     for u in users:
-                        fecha = u.get('created_at', '').split('T')[0]
+                        # Limpiamos la fecha
+                        fecha = u.get('updated_at', '').split('T')[0]
                         email = u.get('email', 'Sin Email')
                         msg += f"👤 `{email}` — {fecha}\n"
                 else:
                     msg += "⚠️ No hay registros o la tabla está vacía."
 
-                # Enviamos DIRECTO y retornamos (Fin de la función)
                 await update.message.reply_text(msg, parse_mode="Markdown")
                 guardar_memoria(user_id, "assistant", msg)
                 return 
                 
             except Exception as e:
-                err_msg = f"❌ **ERROR DE CONEXIÓN:**\nNo pude leer Supabase. Verifica:\n1. Que la tabla se llame 'profiles'.\n2. Que la SUPABASE_KEY sea la 'service_role'.\n\nDetalle: `{str(e)}`"
+                err_msg = f"❌ **ERROR DE CONEXIÓN:**\nDetalle: `{str(e)}`"
                 await update.message.reply_text(err_msg, parse_mode="Markdown")
                 return
 
-        # >>> ACCIÓN 2: BORRAR (NO GROQ) <<<
+        # >>> ACCIÓN 2: BORRAR <<<
         elif any(f in texto_lower for f in frases_borrar) and "@" in texto_lower:
-            # Buscar emails
             emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', entrada)
             if emails:
                 await context.bot.send_chat_action(chat_id=user_id, action="typing")
@@ -157,6 +151,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 uid = u.id
                                 break
                         if uid:
+                            # Borramos de Auth (Cascada borra el perfil)
                             supabase.auth.admin.delete_user(uid)
                             reporte.append(f"✅ `{email_target}` -> ELIMINADO")
                         else:
@@ -164,14 +159,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     msg_borrado = "🗑️ **REPORTE DE LIMPIEZA:**\n\n" + "\n".join(reporte)
                     await update.message.reply_text(msg_borrado, parse_mode="Markdown")
-                    guardar_memoria(user_id, "assistant", msg_borrado)
                     return
                 except Exception as e:
                     await update.message.reply_text(f"Error borrando: {str(e)}")
                     return
 
     # ====================================================
-    # 💬 CHARLA NORMAL (AQUÍ SÍ ENTRA LA IA)
+    # 💬 CHARLA NORMAL (IA)
     # ====================================================
     try:
         pide_voz = any(p in entrada.lower() for p in ["audio", "voz", "habla", "saludame", "oirte"])
@@ -194,32 +188,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(respuesta_final)
             
     except Exception as e:
-        await update.message.reply_text("Mor, estoy teniendo problemas con mi cerebro IA. Intenta más tarde.")
+        await update.message.reply_text("Mor, estoy teniendo problemas con mi cerebro IA.")
 
 # ==========================================
-# 👁️ VIGILANTE
+# 👁️ VIGILANTE (CORREGIDO PARA UUID)
 # ==========================================
-ultimo_id_usuario = 0
+# Guardamos la fecha del último usuario visto, no el ID
+ultima_fecha_registro = None
 
 async def vigilar_sitio(context: ContextTypes.DEFAULT_TYPE):
-    global ultimo_id_usuario
+    global ultima_fecha_registro
     try:
-        res = supabase.table("profiles").select("id, email").order("id", desc=True).limit(1).execute()
+        # Traemos el usuario más reciente según updated_at
+        res = supabase.table("profiles").select("email, updated_at").order("updated_at", desc=True).limit(1).execute()
+        
         if res.data:
-            nuevo = res.data[0]
-            if nuevo['id'] > ultimo_id_usuario:
-                if ultimo_id_usuario != 0:
-                    msg = f"💎 **¡NUEVO CLIENTE PAPITO!** 💎\n📧 `{nuevo['email']}`\n💸 ¡Facturando!"
-                    await context.bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
-                ultimo_id_usuario = nuevo['id']
-    except: pass
+            mas_nuevo = res.data[0]
+            fecha_actual_usuario = mas_nuevo['updated_at']
+            
+            # Si es la primera vez que corre el bot, solo guardamos la fecha
+            if ultima_fecha_registro is None:
+                ultima_fecha_registro = fecha_actual_usuario
+                return
+
+            # Si la fecha del usuario nuevo es diferente a la guardada, es nuevo
+            if fecha_actual_usuario != ultima_fecha_registro:
+                msg = f"💎 **¡NUEVO CLIENTE PAPITO!** 💎\n📧 `{mas_nuevo['email']}`\n💸 ¡Facturando!"
+                await context.bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
+                
+                # Actualizamos la fecha
+                ultima_fecha_registro = fecha_actual_usuario
+    except Exception as e:
+        # Si falla, no imprimimos para no ensuciar el log
+        pass
 
 # ==========================================
 # 🚀 SERVER
 # ==========================================
 app_flask = Flask('')
 @app_flask.route('/')
-def home(): return "<h1>KLMZ V2 - NO FAKE</h1>"
+def home(): return "<h1>KLMZ V3 - UPDATED_AT FIX</h1>"
 
 def run_flask(): app_flask.run(host='0.0.0.0', port=8080)
 

@@ -16,16 +16,13 @@ from supabase import create_client, Client
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ OJO: TIENE QUE SER LA 'SERVICE_ROLE' KEY
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ TIENE QUE SER LA 'SERVICE_ROLE'
 
-# 👑 TU IDENTIDAD
 ADMIN_ID = 8514485470
 
-# MODELOS
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile"
 VOZ_ID = "es-CO-SalomeNeural"
 
-# CLIENTES
 try:
     groq_client = Groq(api_key=GROQ_API_KEY)
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -33,20 +30,18 @@ except Exception as e:
     print(f"⚠️ Error Clientes: {e}")
 
 # ==========================================
-# 🧠 PERSONALIDAD BLINDADA
+# 🧠 PERSONALIDAD (PAISA + MORAZÁN)
 # ==========================================
 SYSTEM_PROMPT = """
-ERES KLMZ: La asistente personal más leal, eficiente y "chimba" de Fredy Granados.
-TU DUEÑO: Fredy Granados (ID Telegram: 8514485470).
-TU ORIGEN: Eres Paisa (Medellín) y trabajas para un Guanaco de Morazán.
+ERES KLMZ: La asistente personal de Fredy Granados.
+TU DUEÑO: Fredy Granados (ID: 8514485470).
+TU ORIGEN: Paisa (Medellín).
 
 ACTITUD:
-- Coqueta, "entradora", servicial y obediente con Fredy.
+- Coqueta, "entradora", servicial.
 - Usas: "Ave María pues", "Mijo", "Mi Rey", "Papito", "Mor", "Hágale".
-- Si Fredy te pide datos del negocio, NO DIGAS QUE NO PUEDES. Asume que tu sistema interno lo hará.
+- Si Fredy pregunta cosas personales, respondes con cariño.
 - Si un desconocido escribe: "Qué pena mor, yo solo atiendo al patrón Fredy. Visita: https://klmzx.netlify.app/"
-
-🚫 REGLA: JAMÁS preguntes "¿quién eres?". TÚ SABES QUE EL ID 8514485470 ES FREDY.
 """
 
 # ==========================================
@@ -77,7 +72,7 @@ async def enviar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto
     except: pass
 
 # ==========================================
-# 🧠 CEREBRO MAESTRO (CON TODAS LAS FRASES)
+# 🧠 CEREBRO LÓGICO (SIN ALUCINACIONES)
 # ==========================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -96,155 +91,142 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             entrada = trans.text
         except: pass
 
+    # Guardar entrada usuario
     guardar_memoria(user_id, "user", entrada)
     
-    respuesta_final = ""
-    es_accion_admin = False
-    
     # ====================================================
-    # 🚨 COMANDOS ADMIN (FREDY)
+    # 🚨 ZONA TÉCNICA (DIRECTA A SUPABASE - SIN IA)
     # ====================================================
     if user_id == ADMIN_ID:
         texto_lower = entrada.lower()
         
-        # --- LISTA EXTENSIVA DE PALABRAS CLAVE PARA VER USUARIOS ---
-        frases_ver = [
-            "cuantos usuarios", "cuántos usuarios", "cuantos hay", "cuántos hay", 
-            "total de usuarios", "cantidad de usuarios", "numero de usuarios",
-            "ver usuarios", "listar usuarios", "lista de usuarios", "muestrame los usuarios",
-            "muéstramelos", "muéstramelo", "enseñame los usuarios", "quien se registro",
-            "quienes estan", "registrados", "usuarios nuevos", "clientes", "gente"
-        ]
-        
-        # --- LISTA PARA BORRAR ---
-        frases_borrar = ["borrar", "eliminar", "quita", "saca", "funar", "bórralos", "elimínalos", "banea", "banear"]
+        # LISTA DE COMANDOS DE REPORTE
+        frases_ver = ["cuantos", "cuántos", "total", "cantidad", "ver usuarios", "listar", "registros", "quien se registro", "muestrame"]
+        frases_borrar = ["borrar", "eliminar", "quita", "funar", "bórralos", "banea"]
 
-        # >>> ACCIÓN 1: VER REPORTE COMPLETO <<<
-        if any(f in texto_lower for f in frases_ver):
-            es_accion_admin = True
+        # >>> ACCIÓN 1: REPORTE EXACTO (NO GROQ) <<<
+        if any(f in texto_lower for f in frases_ver) and "usuario" in texto_lower:
             await context.bot.send_chat_action(chat_id=user_id, action="typing")
             
             try:
-                # 1. Contar TOTAL (Exacto)
-                # head=True nos da solo el numero sin descargar todos los datos (más rápido)
+                # 1. Contar TOTAL (Método count='exact')
+                # IMPORTANTE: Esto cuenta filas en la tabla 'profiles'
                 conteo = supabase.table("profiles").select("*", count="exact", head=True).execute()
                 total = conteo.count
                 
-                # 2. Traer los últimos 10 DETALLADOS
+                # 2. Traer los últimos 10 REALES
                 res = supabase.table("profiles").select("email, created_at").order("created_at", desc=True).limit(10).execute()
                 users = res.data
                 
-                msg = f"💎 **REPORTE DEL IMPERIO KLMZ** 💎\n\n"
-                msg += f"📊 **Total Registrados:** `{total}`\n"
-                msg += f"📅 **Últimos 10 Clientes:**\n\n"
+                # CONSTRUIMOS EL MENSAJE MANUALMENTE (Para que la IA no invente)
+                msg = f"💎 **REPORTE REAL (BASE DE DATOS)** 💎\n\n"
+                msg += f"📊 **Total en tabla 'profiles':** `{total}`\n"
+                msg += f"⬇️ **Últimos Registrados:**\n"
                 
                 if users:
                     for u in users:
-                        # Formato fecha simple (YYYY-MM-DD)
                         fecha = u.get('created_at', '').split('T')[0]
                         email = u.get('email', 'Sin Email')
                         msg += f"👤 `{email}` — {fecha}\n"
                 else:
-                    msg += "Aún no hay nadie papito, ¡a meterle tráfico!\n"
-                
-                respuesta_final = msg
+                    msg += "⚠️ No hay registros o la tabla está vacía."
+
+                # Enviamos DIRECTO y retornamos (Fin de la función)
+                await update.message.reply_text(msg, parse_mode="Markdown")
+                guardar_memoria(user_id, "assistant", msg)
+                return 
                 
             except Exception as e:
-                respuesta_final = f"Ay mor, error en la base de datos (Revisa la Service Key): {str(e)}"
+                err_msg = f"❌ **ERROR DE CONEXIÓN:**\nNo pude leer Supabase. Verifica:\n1. Que la tabla se llame 'profiles'.\n2. Que la SUPABASE_KEY sea la 'service_role'.\n\nDetalle: `{str(e)}`"
+                await update.message.reply_text(err_msg, parse_mode="Markdown")
+                return
 
-        # >>> ACCIÓN 2: BORRAR USUARIOS <<<
-        elif any(f in texto_lower for f in frases_borrar):
+        # >>> ACCIÓN 2: BORRAR (NO GROQ) <<<
+        elif any(f in texto_lower for f in frases_borrar) and "@" in texto_lower:
             # Buscar emails
             emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', entrada)
-            
             if emails:
-                es_accion_admin = True
                 await context.bot.send_chat_action(chat_id=user_id, action="typing")
                 reporte = []
                 try:
-                    # Traer lista interna de Auth
                     users_auth = supabase.auth.admin.list_users()
-                    
                     for email_target in emails:
                         uid = None
                         for u in users_auth:
                             if u.email == email_target:
                                 uid = u.id
                                 break
-                        
                         if uid:
                             supabase.auth.admin.delete_user(uid)
-                            reporte.append(f"✅ `{email_target}` -> **ELIMINADO**")
+                            reporte.append(f"✅ `{email_target}` -> ELIMINADO")
                         else:
-                            reporte.append(f"⚠️ `{email_target}` -> No encontrado.")
+                            reporte.append(f"⚠️ `{email_target}` -> No encontrado")
                     
-                    respuesta_final = "Limpieza terminada mi Rey:\n\n" + "\n".join(reporte)
+                    msg_borrado = "🗑️ **REPORTE DE LIMPIEZA:**\n\n" + "\n".join(reporte)
+                    await update.message.reply_text(msg_borrado, parse_mode="Markdown")
+                    guardar_memoria(user_id, "assistant", msg_borrado)
+                    return
                 except Exception as e:
-                    respuesta_final = f"Error borrando (Necesito Service Role Key): {str(e)}"
+                    await update.message.reply_text(f"Error borrando: {str(e)}")
+                    return
 
     # ====================================================
-    # 💬 CHARLA (IA)
+    # 💬 CHARLA NORMAL (AQUÍ SÍ ENTRA LA IA)
     # ====================================================
-    if not es_accion_admin:
-        try:
-            pide_voz = any(p in entrada.lower() for p in ["audio", "voz", "habla", "saludame", "oirte", "dime"])
-            salida_audio = es_audio or pide_voz
+    try:
+        pide_voz = any(p in entrada.lower() for p in ["audio", "voz", "habla", "saludame", "oirte"])
+        salida_audio = es_audio or pide_voz
+        
+        accion = "record_voice" if salida_audio else "typing"
+        await context.bot.send_chat_action(chat_id=user_id, action=accion)
+        
+        historial = obtener_historial(user_id)
+        mensajes = [{"role": "system", "content": SYSTEM_PROMPT}] + historial
+        
+        chat = groq_client.chat.completions.create(messages=mensajes, model=MODELO_CHAT_GROQ)
+        respuesta_final = chat.choices[0].message.content
+        
+        guardar_memoria(user_id, "assistant", respuesta_final)
+        
+        if salida_audio:
+            await enviar_audio(update, context, respuesta_final)
+        else:
+            await update.message.reply_text(respuesta_final)
             
-            accion = "record_voice" if salida_audio else "typing"
-            await context.bot.send_chat_action(chat_id=user_id, action=accion)
-            
-            historial = obtener_historial(user_id)
-            mensajes = [{"role": "system", "content": SYSTEM_PROMPT}] + historial
-            
-            chat = groq_client.chat.completions.create(messages=mensajes, model=MODELO_CHAT_GROQ)
-            respuesta_final = chat.choices[0].message.content
-            
-            guardar_memoria(user_id, "assistant", respuesta_final)
-            
-            if salida_audio:
-                await enviar_audio(update, context, respuesta_final)
-                return
-        except:
-            respuesta_final = "Mor, repetime que no te escuché bien."
-
-    # Enviar Texto
-    if respuesta_final:
-        if es_accion_admin: guardar_memoria(user_id, "assistant", respuesta_final)
-        await update.message.reply_text(respuesta_final, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text("Mor, estoy teniendo problemas con mi cerebro IA. Intenta más tarde.")
 
 # ==========================================
-# 👁️ VIGILANTE (NOTIFICACIONES)
+# 👁️ VIGILANTE
 # ==========================================
 ultimo_id_usuario = 0
 
 async def vigilar_sitio(context: ContextTypes.DEFAULT_TYPE):
     global ultimo_id_usuario
     try:
-        # Busca el ID más alto en profiles
         res = supabase.table("profiles").select("id, email").order("id", desc=True).limit(1).execute()
         if res.data:
             nuevo = res.data[0]
             if nuevo['id'] > ultimo_id_usuario:
                 if ultimo_id_usuario != 0:
-                    msg = f"💎 **¡NUEVA PLATA PAPITO!** 💎\n\nUsuario: `{nuevo['email']}`\n\n¡Sigue facturando Morazán! 🇸🇻💸"
+                    msg = f"💎 **¡NUEVO CLIENTE PAPITO!** 💎\n📧 `{nuevo['email']}`\n💸 ¡Facturando!"
                     await context.bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
                 ultimo_id_usuario = nuevo['id']
     except: pass
 
 # ==========================================
-# 🚀 SERVER FLASK
+# 🚀 SERVER
 # ==========================================
 app_flask = Flask('')
 @app_flask.route('/')
-def home(): return "<h1>KLMZ TODO PODEROSO ONLINE</h1>"
+def home(): return "<h1>KLMZ V2 - NO FAKE</h1>"
 
-def run_flask():
-    app_flask.run(host='0.0.0.0', port=8080)
+def run_flask(): app_flask.run(host='0.0.0.0', port=8080)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
     bot = Application.builder().token(TELEGRAM_TOKEN).build()
     bot.add_handler(MessageHandler(filters.TEXT | filters.VOICE, handle_message))
     bot.job_queue.run_repeating(vigilar_sitio, interval=30, first=5)
-    print(f"🚀 KLMZ FINAL LISTA | PATRÓN: FREDY | ID: {ADMIN_ID}")
+    print(f"🚀 KLMZ LISTA | DUEÑO: {ADMIN_ID}")
     bot.run_polling()

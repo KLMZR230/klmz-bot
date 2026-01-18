@@ -11,52 +11,44 @@ import edge_tts
 from supabase import create_client, Client
 
 # ==========================================
-# 🔐 CONFIGURACIÓN Y CREDENCIALES
+# 🔐 CONFIGURACIÓN
 # ==========================================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ DEBE SER LA 'SERVICE_ROLE' KEY
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ SERVICE_ROLE KEY
 
-# 👑 TU IDENTIDAD (NO TOCAR)
 ADMIN_ID = 8514485470
 
-# MODELOS
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile"
-VOZ_ID = "es-CO-SalomeNeural"  # Voz Paisa/Colombiana
+VOZ_ID = "es-CO-SalomeNeural"
 
-# CLIENTES
 try:
     groq_client = Groq(api_key=GROQ_API_KEY)
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-    print(f"⚠️ Error fatal iniciando clientes: {e}")
+    print(f"⚠️ Error Clientes: {e}")
 
 # ==========================================
-# 🧠 PERSONALIDAD DEL BOT
+# 🧠 PERSONALIDAD
 # ==========================================
 SYSTEM_PROMPT = """
-ERES KLMZ: La asistente personal más leal y eficiente de Fredy Granados.
+ERES KLMZ: La asistente personal de Fredy Granados.
 TU DUEÑO: Fredy Granados (ID Telegram: 8514485470).
-TU ORIGEN: Eres Paisa (Medellín) y trabajas para un Guanaco de Morazán.
+TU ORIGEN: Paisa (Medellín).
 
 ACTITUD:
-- Coqueta, "entradora", servicial y obediente con Fredy.
-- Usas: "Ave María pues", "Mijo", "Mi Rey", "Papito", "Mor", "Hágale".
-- Si Fredy pregunta "¿De dónde soy?", respondes: "¡De Morazán, El Salvador! Orgullo guanaco, mi Rey."
-- Si un desconocido escribe: "Qué pena mor, yo solo atiendo al patrón Fredy. Visita: https://klmzx.netlify.app/"
-
-🚫 REGLA: JAMÁS preguntes "¿quién eres?". TÚ SABES QUE EL ID 8514485470 ES FREDY.
+- Coqueta, "entradora", servicial.
+- Usas: "Ave María pues", "Mijo", "Mi Rey", "Papito", "Mor".
+- Si Fredy está enojado, sé rápida y soluciona.
 """
 
 # ==========================================
-# 💾 GESTIÓN DE MEMORIA
+# 💾 MEMORIA
 # ==========================================
 def guardar_memoria(user_id, role, content):
     try:
-        supabase.table("chat_history").insert({
-            "user_id": user_id, "role": role, "content": content
-        }).execute()
+        supabase.table("chat_history").insert({"user_id": user_id, "role": role, "content": content}).execute()
     except: pass
 
 def obtener_historial(user_id):
@@ -66,7 +58,7 @@ def obtener_historial(user_id):
     except: return []
 
 # ==========================================
-# 🔊 AUDIO (EDGE TTS)
+# 🔊 AUDIO
 # ==========================================
 async def enviar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto: str):
     try:
@@ -79,14 +71,13 @@ async def enviar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto
     except: pass
 
 # ==========================================
-# 🧠 CEREBRO MAESTRO (LÓGICA BLINDADA)
+# 🧠 CEREBRO MAESTRO (CON RESURRECCIÓN)
 # ==========================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     entrada = update.message.text or ""
     es_audio = False
     
-    # 1. PROCESAR AUDIO DE ENTRADA
     if update.message.voice:
         es_audio = True
         try:
@@ -101,92 +92,103 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     guardar_memoria(user_id, "user", entrada)
     
     # ====================================================
-    # 🚨 ZONA DE COMANDOS TÉCNICOS (SÓLO FREDY)
+    # 🚨 ZONA TÉCNICA
     # ====================================================
     if user_id == ADMIN_ID:
         texto_lower = entrada.lower()
         
-        # --- DICCIONARIO 1: VER REPORTES (Detecta intención de ver datos) ---
-        frases_ver = [
-            "usuario", "usuarios", "clientes", "gente", "registrados", 
-            "base de datos", "bd", "revisa", "cuantos", "cuántos", 
-            "total", "cantidad", "ver", "listar", "quien", "muestrame", "cuales", "hay", "datos"
-        ]
+        # FRASES CLAVE
+        frases_ver = ["usuario", "usuarios", "clientes", "gente", "registrados", "bd", "revisa", "cuantos", "total", "ver", "listar"]
         
-        # --- DICCIONARIO 2: BORRAR (Contextual e Inteligente) ---
-        # Si hay un email y ALGO de esto, lo borra.
-        frases_borrar_contexto = [
-            "borrar", "eliminar", "quita", "funar", "bórralos", "banea", 
-            "elimina", "borra", "saca", "funalo", "sacalo", "destruye",
-            "este", "ese", "tambien", "también", "otro", "y a", "el de", "al", "bye", "chao", "adios"
-        ]
+        # Frases para crear (PRIORIDAD ALTA)
+        frases_crear = ["agrega", "agregar", "crear", "crea", "nuevo", "registra", "devuelve", "restaura", "recupera", "metelo"]
+        
+        # Frases para borrar
+        frases_borrar = ["borrar", "eliminar", "quita", "funar", "bórralos", "elimina", "borra", "saca", "funalo", "sacalo", "este", "ese", "tambien", "otro"]
 
-        # >>> CASO A: SI HAY UN EMAIL (@) -> CHECAMOS SI ES ORDEN DE BORRAR <<<
-        if "@" in texto_lower:
+        # >>> ACCIÓN 0: CREAR / REVIVIR USUARIO (PRIORIDAD MÁXIMA) <<<
+        if any(f in texto_lower for f in frases_crear) and "@" in texto_lower:
+            await context.bot.send_chat_action(chat_id=user_id, action="typing")
+            
+            # Buscar email
             emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', entrada)
             
+            # Buscar contraseña (algo después de 'contraseña' o 'clave' o 'pass')
+            pass_match = re.search(r'(?:contraseña|clave|pass)[:\s]+(\S+)', entrada, re.IGNORECASE)
+            password_final = pass_match.group(1) if pass_match else "klmz123456" # Pass por defecto si no escribes una
+            
             if emails:
-                # Si dice "este también correo..." o "elimina correo...", entra aquí.
-                if any(f in texto_lower for f in frases_borrar_contexto):
+                email_target = emails[0]
+                try:
+                    # INTENTO DE CREACIÓN EN SUPABASE
+                    nuevo_user = supabase.auth.admin.create_user({
+                        "email": email_target,
+                        "password": password_final,
+                        "email_confirm": True # Lo confirmamos de una vez
+                    })
+                    
+                    msg = f"✅ **¡RESUCITADO!**\n\nUsuario: `{email_target}`\nPass: `{password_final}`\n\n¡El Admin ha vuelto a la vida mi Rey! 💎✝️"
+                    await update.message.reply_text(msg, parse_mode="Markdown")
+                    guardar_memoria(user_id, "assistant", msg)
+                    return
+                except Exception as e:
+                    await update.message.reply_text(f"⚠️ Error al crear: {str(e)}")
+                    return
+
+        # >>> ACCIÓN 1: BORRAR (SOLO SI NO DIJO CREAR) <<<
+        elif any(f in texto_lower for f in frases_borrar) and "@" in texto_lower:
+            # Doble chequeo: Si dice "agrega", NO entres aquí (por si acaso)
+            if not any(f in texto_lower for f in frases_crear):
+                emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', entrada)
+                if emails:
                     await context.bot.send_chat_action(chat_id=user_id, action="typing")
                     reporte = []
                     try:
-                        # Traer usuarios de Auth
                         users_auth = supabase.auth.admin.list_users()
-                        
                         for email_target in emails:
                             uid = None
                             for u in users_auth:
                                 if u.email == email_target:
                                     uid = u.id
                                     break
-                            
                             if uid:
-                                # BORRADO REAL
                                 supabase.auth.admin.delete_user(uid)
-                                reporte.append(f"✅ `{email_target}` -> **ELIMINADO (Bye bye)** 💀")
+                                reporte.append(f"✅ `{email_target}` -> **ELIMINADO** 💀")
                             else:
-                                reporte.append(f"⚠️ `{email_target}` -> No encontrado en BD.")
+                                reporte.append(f"⚠️ `{email_target}` -> No encontrado.")
                         
-                        msg_borrado = "🗑️ **LIMPIEZA EJECUTADA:**\n\n" + "\n".join(reporte)
+                        msg_borrado = "🗑️ **LIMPIEZA:**\n\n" + "\n".join(reporte)
                         await update.message.reply_text(msg_borrado, parse_mode="Markdown")
-                        guardar_memoria(user_id, "assistant", msg_borrado)
-                        return # ALTO AQUÍ: No dejamos que la IA hable después
+                        return
                     except Exception as e:
                         await update.message.reply_text(f"Error borrando: {str(e)}")
                         return
 
-        # >>> CASO B: NO HAY EMAIL -> CHECAMOS SI ES REPORTE <<<
+        # >>> ACCIÓN 2: REPORTE <<<
         elif any(f in texto_lower for f in frases_ver): 
             await context.bot.send_chat_action(chat_id=user_id, action="typing")
             try:
-                # 1. Conteo Total
                 conteo = supabase.table("profiles").select("*", count="exact", head=True).execute()
                 total = conteo.count
-                
-                # 2. Lista Últimos 10 (Usando updated_at que es la que tienes)
                 res = supabase.table("profiles").select("email, updated_at").order("updated_at", desc=True).limit(10).execute()
                 users = res.data
                 
-                msg = f"💎 **REPORTE REAL (BASE DE DATOS):** 💎\n\n📊 **Total:** `{total}`\n⬇️ **Últimos:**\n"
-                
+                msg = f"💎 **REPORTE REAL:** 💎\n\n📊 **Total:** `{total}`\n⬇️ **Últimos:**\n"
                 if users:
                     for u in users:
                         fecha = u.get('updated_at', 'S/F').split('T')[0]
                         email = u.get('email', 'Anónimo')
                         msg += f"👤 `{email}` ({fecha})\n"
                 else:
-                    msg += "⚠️ Base de datos vacía."
-
+                    msg += "⚠️ Vacío."
                 await update.message.reply_text(msg, parse_mode="Markdown")
-                guardar_memoria(user_id, "assistant", msg)
-                return # ALTO AQUÍ
+                return 
             except Exception as e:
-                await update.message.reply_text(f"❌ Error leyendo Supabase: `{str(e)}`")
+                await update.message.reply_text(f"❌ Error: `{str(e)}`")
                 return
 
     # ====================================================
-    # 💬 CHARLA NORMAL (IA GROQ) - SÓLO SI NO FUE ORDEN
+    # 💬 CHARLA NORMAL
     # ====================================================
     try:
         pide_voz = any(p in entrada.lower() for p in ["audio", "voz", "habla", "saludame", "oirte"])
@@ -209,52 +211,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(respuesta_final)
             
     except Exception as e:
-        await update.message.reply_text("Mor, se me desconectó el cerebro un ratico. Intenta ya.")
+        await update.message.reply_text("Mor, cerebro reiniciando...")
 
 # ==========================================
-# 👁️ VIGILANTE (NOTIFICACIONES)
+# 👁️ VIGILANTE
 # ==========================================
 ultima_fecha_registro = None
 
 async def vigilar_sitio(context: ContextTypes.DEFAULT_TYPE):
     global ultima_fecha_registro
     try:
-        # Busca el más reciente por fecha (updated_at)
         res = supabase.table("profiles").select("email, updated_at").order("updated_at", desc=True).limit(1).execute()
         if res.data:
             mas_nuevo = res.data[0]
             fecha_actual = mas_nuevo['updated_at']
-            
-            # Inicializar
             if ultima_fecha_registro is None:
                 ultima_fecha_registro = fecha_actual
                 return
-
-            # Si la fecha cambió, hay uno nuevo
             if fecha_actual != ultima_fecha_registro:
                 email = mas_nuevo.get('email', 'Anónimo')
-                msg = f"💎 **¡NUEVO CLIENTE PAPITO!** 💎\n📧 `{email}`\n💸 ¡A facturar Morazán!"
+                msg = f"💎 **¡NUEVO CLIENTE!** 💎\n📧 `{email}`"
                 await context.bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
-                
                 ultima_fecha_registro = fecha_actual
     except: pass
 
 # ==========================================
-# 🚀 SERVER FLASK
+# 🚀 SERVER
 # ==========================================
 app_flask = Flask('')
 @app_flask.route('/')
-def home(): return "<h1>KLMZ SYSTEM V5 - INTELIGENTE 💎</h1>"
+def home(): return "<h1>KLMZ RESURRECTION MODE 💎</h1>"
 
-def run_flask():
-    app_flask.run(host='0.0.0.0', port=8080)
+def run_flask(): app_flask.run(host='0.0.0.0', port=8080)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
     bot = Application.builder().token(TELEGRAM_TOKEN).build()
-    
     bot.add_handler(MessageHandler(filters.TEXT | filters.VOICE, handle_message))
     bot.job_queue.run_repeating(vigilar_sitio, interval=30, first=5)
-    
-    print(f"🚀 KLMZ FINAL LISTA | DUEÑO: {ADMIN_ID}")
+    print(f"🚀 KLMZ LISTA | DUEÑO: {ADMIN_ID}")
     bot.run_polling()

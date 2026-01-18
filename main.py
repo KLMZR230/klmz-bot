@@ -11,12 +11,12 @@ import edge_tts
 from supabase import create_client, Client
 
 # ==========================================
-# 🔐 CONFIGURACIÓN
+# 🔐 CREDENCIALES
 # ==========================================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ SERVICE_ROLE KEY
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ TIENE QUE SER LA 'SERVICE_ROLE'
 
 ADMIN_ID = 8514485470
 
@@ -33,14 +33,9 @@ except Exception as e:
 # 🧠 PERSONALIDAD
 # ==========================================
 SYSTEM_PROMPT = """
-ERES KLMZ: La asistente personal de Fredy Granados.
-TU DUEÑO: Fredy Granados (ID Telegram: 8514485470).
-TU ORIGEN: Paisa (Medellín).
-
-ACTITUD:
-- Coqueta, "entradora", servicial.
-- Usas: "Ave María pues", "Mijo", "Mi Rey", "Papito", "Mor".
-- Si Fredy está enojado, sé rápida y soluciona.
+ERES KLMZ: Asistente personal de Fredy Granados.
+TU DUEÑO: Fredy Granados (ID: 8514485470).
+ACTITUD: Paisa, eficiente, leal.
 """
 
 # ==========================================
@@ -71,7 +66,7 @@ async def enviar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto
     except: pass
 
 # ==========================================
-# 🧠 CEREBRO MAESTRO (CON RESURRECCIÓN)
+# 🧠 CEREBRO JERÁRQUICO (NO FALLA)
 # ==========================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -92,106 +87,101 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     guardar_memoria(user_id, "user", entrada)
     
     # ====================================================
-    # 🚨 ZONA TÉCNICA
+    # 🚨 ZONA DE COMANDOS (LÓGICA BLINDADA)
     # ====================================================
     if user_id == ADMIN_ID:
         texto_lower = entrada.lower()
         
-        # FRASES CLAVE
-        frases_ver = ["usuario", "usuarios", "clientes", "gente", "registrados", "bd", "revisa", "cuantos", "total", "ver", "listar"]
+        # 1. LISTAS DE GATILLO
+        k_crear = ["agrega", "agregar", "crear", "crea", "nuevo", "registra", "devuelve", "restaura", "recupera"]
+        k_borrar = ["borrar", "eliminar", "quita", "funar", "bórralos", "elimina", "borra", "saca", "este", "ese", "tambien", "otro"]
+        k_ver = ["usuario", "usuarios", "clientes", "registrados", "bd", "revisa", "cuantos", "total", "ver", "listar"]
         
-        # Frases para crear (PRIORIDAD ALTA)
-        frases_crear = ["agrega", "agregar", "crear", "crea", "nuevo", "registra", "devuelve", "restaura", "recupera", "metelo"]
+        # 2. BANDERAS DE INTENCIÓN (BOOLEANOS)
+        intencion_crear = any(k in texto_lower for k in k_crear)
+        intencion_borrar = any(k in texto_lower for k in k_borrar)
+        intencion_ver = any(k in texto_lower for k in k_ver)
         
-        # Frases para borrar
-        frases_borrar = ["borrar", "eliminar", "quita", "funar", "bórralos", "elimina", "borra", "saca", "funalo", "sacalo", "este", "ese", "tambien", "otro"]
+        tiene_arroba = "@" in texto_lower
 
-        # >>> ACCIÓN 0: CREAR / REVIVIR USUARIO (PRIORIDAD MÁXIMA) <<<
-        if any(f in texto_lower for f in frases_crear) and "@" in texto_lower:
+        # >>> JERARQUÍA 1: CREAR (GANA SIEMPRE) <<<
+        if intencion_crear and tiene_arroba:
             await context.bot.send_chat_action(chat_id=user_id, action="typing")
             
-            # Buscar email
             emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', entrada)
-            
-            # Buscar contraseña (algo después de 'contraseña' o 'clave' o 'pass')
-            pass_match = re.search(r'(?:contraseña|clave|pass)[:\s]+(\S+)', entrada, re.IGNORECASE)
-            password_final = pass_match.group(1) if pass_match else "klmz123456" # Pass por defecto si no escribes una
+            # Regex corregido para aceptar "contrasña" (typo)
+            pass_match = re.search(r'(?:contraseña|contrasña|clave|pass)[:\s]+(\S+)', entrada, re.IGNORECASE)
+            password_final = pass_match.group(1) if pass_match else "klmz123456"
             
             if emails:
-                email_target = emails[0]
+                target = emails[0]
                 try:
-                    # INTENTO DE CREACIÓN EN SUPABASE
                     nuevo_user = supabase.auth.admin.create_user({
-                        "email": email_target,
+                        "email": target,
                         "password": password_final,
-                        "email_confirm": True # Lo confirmamos de una vez
+                        "email_confirm": True
                     })
-                    
-                    msg = f"✅ **¡RESUCITADO!**\n\nUsuario: `{email_target}`\nPass: `{password_final}`\n\n¡El Admin ha vuelto a la vida mi Rey! 💎✝️"
+                    msg = f"✅ **¡RESUCITADO CON ÉXITO!**\n\n👤 `{target}`\n🔑 `{password_final}`\n\n¡Bienvenido de vuelta, Admin! 💎"
                     await update.message.reply_text(msg, parse_mode="Markdown")
-                    guardar_memoria(user_id, "assistant", msg)
                     return
                 except Exception as e:
-                    await update.message.reply_text(f"⚠️ Error al crear: {str(e)}")
+                    await update.message.reply_text(f"⚠️ Error creando: {str(e)}")
                     return
 
-        # >>> ACCIÓN 1: BORRAR (SOLO SI NO DIJO CREAR) <<<
-        elif any(f in texto_lower for f in frases_borrar) and "@" in texto_lower:
-            # Doble chequeo: Si dice "agrega", NO entres aquí (por si acaso)
-            if not any(f in texto_lower for f in frases_crear):
+        # >>> JERARQUÍA 2: BORRAR (SOLO SI NO ES CREAR) <<<
+        elif intencion_borrar and tiene_arroba:
+            # BLOQUEO DE SEGURIDAD: Si dice "agrega", aborta el borrado.
+            if not intencion_crear:
                 emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', entrada)
                 if emails:
                     await context.bot.send_chat_action(chat_id=user_id, action="typing")
                     reporte = []
                     try:
                         users_auth = supabase.auth.admin.list_users()
-                        for email_target in emails:
+                        for target in emails:
                             uid = None
                             for u in users_auth:
-                                if u.email == email_target:
+                                if u.email == target:
                                     uid = u.id
                                     break
                             if uid:
                                 supabase.auth.admin.delete_user(uid)
-                                reporte.append(f"✅ `{email_target}` -> **ELIMINADO** 💀")
+                                reporte.append(f"✅ `{target}` -> **ELIMINADO** 💀")
                             else:
-                                reporte.append(f"⚠️ `{email_target}` -> No encontrado.")
+                                reporte.append(f"⚠️ `{target}` -> No encontrado.")
                         
-                        msg_borrado = "🗑️ **LIMPIEZA:**\n\n" + "\n".join(reporte)
-                        await update.message.reply_text(msg_borrado, parse_mode="Markdown")
+                        await update.message.reply_text("🗑️ **LIMPIEZA:**\n" + "\n".join(reporte), parse_mode="Markdown")
                         return
                     except Exception as e:
                         await update.message.reply_text(f"Error borrando: {str(e)}")
                         return
 
-        # >>> ACCIÓN 2: REPORTE <<<
-        elif any(f in texto_lower for f in frases_ver): 
+        # >>> JERARQUÍA 3: REPORTES <<<
+        elif intencion_ver: 
             await context.bot.send_chat_action(chat_id=user_id, action="typing")
             try:
                 conteo = supabase.table("profiles").select("*", count="exact", head=True).execute()
-                total = conteo.count
                 res = supabase.table("profiles").select("email, updated_at").order("updated_at", desc=True).limit(10).execute()
-                users = res.data
                 
-                msg = f"💎 **REPORTE REAL:** 💎\n\n📊 **Total:** `{total}`\n⬇️ **Últimos:**\n"
-                if users:
-                    for u in users:
-                        fecha = u.get('updated_at', 'S/F').split('T')[0]
-                        email = u.get('email', 'Anónimo')
-                        msg += f"👤 `{email}` ({fecha})\n"
-                else:
-                    msg += "⚠️ Vacío."
+                msg = f"💎 **DATOS REALES:** 💎\n📊 Total: `{conteo.count}`\n"
+                if res.data:
+                    for u in res.data:
+                        f = u.get('updated_at', 'S/F').split('T')[0]
+                        e = u.get('email', 'Anónimo')
+                        msg += f"👤 `{e}` ({f})\n"
+                else: msg += "⚠️ Vacío."
+                
                 await update.message.reply_text(msg, parse_mode="Markdown")
                 return 
             except Exception as e:
-                await update.message.reply_text(f"❌ Error: `{str(e)}`")
+                await update.message.reply_text(f"❌ Error: {str(e)}")
                 return
 
     # ====================================================
-    # 💬 CHARLA NORMAL
+    # 💬 CHARLA IA
     # ====================================================
     try:
-        pide_voz = any(p in entrada.lower() for p in ["audio", "voz", "habla", "saludame", "oirte"])
+        pide_voz = any(p in entrada.lower() for p in ["audio", "voz", "habla", "saludame"])
         salida_audio = es_audio or pide_voz
         
         accion = "record_voice" if salida_audio else "typing"
@@ -210,8 +200,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(respuesta_final)
             
-    except Exception as e:
-        await update.message.reply_text("Mor, cerebro reiniciando...")
+    except:
+        await update.message.reply_text("Mor, estoy reiniciando neuronas...")
 
 # ==========================================
 # 👁️ VIGILANTE
@@ -240,7 +230,7 @@ async def vigilar_sitio(context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 app_flask = Flask('')
 @app_flask.route('/')
-def home(): return "<h1>KLMZ RESURRECTION MODE 💎</h1>"
+def home(): return "<h1>KLMZ FINAL V6 💎</h1>"
 
 def run_flask(): app_flask.run(host='0.0.0.0', port=8080)
 
@@ -249,5 +239,5 @@ if __name__ == "__main__":
     bot = Application.builder().token(TELEGRAM_TOKEN).build()
     bot.add_handler(MessageHandler(filters.TEXT | filters.VOICE, handle_message))
     bot.job_queue.run_repeating(vigilar_sitio, interval=30, first=5)
-    print(f"🚀 KLMZ LISTA | DUEÑO: {ADMIN_ID}")
+    print(f"🚀 KLMZ FINAL | DUEÑO: {ADMIN_ID}")
     bot.run_polling()

@@ -11,21 +11,18 @@ import edge_tts
 from supabase import create_client, Client
 
 # ==========================================
-# 🔐 CONFIGURACIÓN Y CREDENCIALES
+# 🔐 CONFIGURACIÓN
 # ==========================================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ OJO: TIENE QUE SER LA 'SERVICE_ROLE'
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") # ⚠️ SERVICE_ROLE KEY OBLIGATORIA
 
-# 👑 TU IDENTIDAD
 ADMIN_ID = 8514485470
 
-# MODELOS
 MODELO_CHAT_GROQ = "llama-3.3-70b-versatile"
 VOZ_ID = "es-CO-SalomeNeural"
 
-# CLIENTES
 try:
     groq_client = Groq(api_key=GROQ_API_KEY)
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -33,20 +30,17 @@ except Exception as e:
     print(f"⚠️ Error Clientes: {e}")
 
 # ==========================================
-# 🧠 PERSONALIDAD BLINDADA
+# 🧠 PERSONALIDAD
 # ==========================================
 SYSTEM_PROMPT = """
-ERES KLMZ: La asistente personal más leal, eficiente y "chimba" de Fredy Granados.
-TU DUEÑO: Fredy Granados (ID Telegram: 8514485470).
-TU ORIGEN: Eres Paisa (Medellín) y trabajas para un Guanaco de Morazán.
+ERES KLMZ: La asistente personal de Fredy Granados.
+TU DUEÑO: Fredy Granados (ID: 8514485470).
+TU ORIGEN: Paisa (Medellín).
 
 ACTITUD:
-- Coqueta, "entradora", servicial y obediente con Fredy.
+- Coqueta, "entradora", servicial.
 - Usas: "Ave María pues", "Mijo", "Mi Rey", "Papito", "Mor", "Hágale".
-- Si Fredy pregunta "¿De dónde soy?", respondes: "¡De Morazán, El Salvador! Orgullo guanaco, mi Rey."
 - Si un desconocido escribe: "Qué pena mor, yo solo atiendo al patrón Fredy. Visita: https://klmzx.netlify.app/"
-
-🚫 REGLA: JAMÁS preguntes "¿quién eres?". TÚ SABES QUE EL ID 8514485470 ES FREDY.
 """
 
 # ==========================================
@@ -77,14 +71,13 @@ async def enviar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE, texto
     except: pass
 
 # ==========================================
-# 🧠 CEREBRO MAESTRO (LÓGICA CORRECTA)
+# 🧠 CEREBRO MAESTRO (HIPER-SENSIBLE)
 # ==========================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     entrada = update.message.text or ""
     es_audio = False
     
-    # 1. AUDIO A TEXTO
     if update.message.voice:
         es_audio = True
         try:
@@ -104,28 +97,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID:
         texto_lower = entrada.lower()
         
-        # FRASES PARA VER REPORTE
+        # ⚠️ PALABRAS CLAVE AMPLIADAS (Cualquiera de estas activa el reporte)
         frases_ver = [
-            "cuantos", "cuántos", "total", "cantidad", 
-            "ver usuarios", "listar", "registros", "quien se registro", 
-            "muestrame", "muéstramelos"
+            "usuario", "usuarios", "clientes", "gente", "registrados", 
+            "base de datos", "bd", "revisa", "cuantos", "cuántos", 
+            "total", "cantidad", "ver", "listar", "quien", "muestrame", "cuales"
         ]
         
-        # FRASES PARA BORRAR (TODAS LAS VARIANTES)
         frases_borrar = [
             "borrar", "eliminar", "quita", "funar", "bórralos", "banea", 
             "elimina", "borra", "saca", "funalo", "sacalo", "destruye"
         ]
 
-        # >>> ACCIÓN 1: REPORTE EXACTO <<<
-        if any(f in texto_lower for f in frases_ver) and ("usuario" in texto_lower or "registrados" in texto_lower):
+        # >>> ACCIÓN 1: REPORTE DE USUARIOS <<<
+        # Si mencionas CUALQUIER palabra de la lista 'frases_ver', entra aquí.
+        if any(f in texto_lower for f in frases_ver) and not "@" in texto_lower: 
+            # (El "not @" evita que confunda 'borrar usuario@mail' con 'ver usuarios')
+            
             await context.bot.send_chat_action(chat_id=user_id, action="typing")
             try:
-                # 1. Contar TOTAL
                 conteo = supabase.table("profiles").select("*", count="exact", head=True).execute()
                 total = conteo.count
                 
-                # 2. Traer los últimos 10 (Por UPDATED_AT)
+                # Traer los últimos 10 (updated_at)
                 res = supabase.table("profiles").select("email, updated_at").order("updated_at", desc=True).limit(10).execute()
                 users = res.data
                 
@@ -133,8 +127,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 if users:
                     for u in users:
-                        fecha = u.get('updated_at', 'Sin Fecha').split('T')[0]
-                        email = u.get('email', 'Anonimo/Sin Email')
+                        fecha = u.get('updated_at', 'S/F').split('T')[0]
+                        email = u.get('email', 'Anónimo')
                         msg += f"👤 `{email}` — {fecha}\n"
                 else:
                     msg += "⚠️ Tabla vacía mi Rey."
@@ -146,7 +140,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"❌ Error Supabase: `{str(e)}`", parse_mode="Markdown")
                 return
 
-        # >>> ACCIÓN 2: BORRAR DE VERDAD (EXTERMINADOR) <<<
+        # >>> ACCIÓN 2: BORRAR USUARIO <<<
         elif any(f in texto_lower for f in frases_borrar) and "@" in texto_lower:
             emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', entrada)
             if emails:
@@ -162,11 +156,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 break
                         if uid:
                             supabase.auth.admin.delete_user(uid)
-                            reporte.append(f"✅ `{email_target}` -> **ELIMINADO REALMENTE** 💀")
+                            reporte.append(f"✅ `{email_target}` -> **ELIMINADO** 💀")
                         else:
                             reporte.append(f"⚠️ `{email_target}` -> No encontrado.")
                     
-                    msg_borrado = "🗑️ **REPORTE DE LIMPIEZA:**\n\n" + "\n".join(reporte)
+                    msg_borrado = "🗑️ **LIMPIEZA:**\n\n" + "\n".join(reporte)
                     await update.message.reply_text(msg_borrado, parse_mode="Markdown")
                     return
                 except Exception as e:
@@ -174,7 +168,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
 
     # ====================================================
-    # 💬 CHARLA NORMAL (IA GROQ)
+    # 💬 CHARLA NORMAL (IA)
     # ====================================================
     try:
         pide_voz = any(p in entrada.lower() for p in ["audio", "voz", "habla", "saludame", "oirte"])
@@ -197,33 +191,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(respuesta_final)
             
     except Exception as e:
-        await update.message.reply_text("Mor, se me desconectó el cerebro un ratico. Intenta ya.")
+        await update.message.reply_text("Mor, se me desconectó el cerebro. Intenta otra vez.")
 
 # ==========================================
-# 👁️ VIGILANTE (NOTIFICACIONES EN VIVO)
+# 👁️ VIGILANTE
 # ==========================================
 ultima_fecha_registro = None
 
 async def vigilar_sitio(context: ContextTypes.DEFAULT_TYPE):
     global ultima_fecha_registro
     try:
-        # Busca el más reciente por updated_at
         res = supabase.table("profiles").select("email, updated_at").order("updated_at", desc=True).limit(1).execute()
         if res.data:
             mas_nuevo = res.data[0]
             fecha_actual = mas_nuevo['updated_at']
             
-            # Inicializar (primera vez no notifica, solo guarda)
             if ultima_fecha_registro is None:
                 ultima_fecha_registro = fecha_actual
                 return
 
-            # Si la fecha cambió, hay uno nuevo
             if fecha_actual != ultima_fecha_registro:
                 email = mas_nuevo.get('email', 'Anónimo')
                 msg = f"💎 **¡NUEVO CLIENTE PAPITO!** 💎\n📧 `{email}`\n💸 ¡Facturando!"
                 await context.bot.send_message(chat_id=ADMIN_ID, text=msg, parse_mode="Markdown")
-                
                 ultima_fecha_registro = fecha_actual
     except: pass
 
@@ -232,7 +222,7 @@ async def vigilar_sitio(context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 app_flask = Flask('')
 @app_flask.route('/')
-def home(): return "<h1>KLMZ SYSTEM ONLINE 💎</h1>"
+def home(): return "<h1>KLMZ V4 - SENSIBLE ONLINE 💎</h1>"
 
 def run_flask(): app_flask.run(host='0.0.0.0', port=8080)
 
@@ -241,5 +231,5 @@ if __name__ == "__main__":
     bot = Application.builder().token(TELEGRAM_TOKEN).build()
     bot.add_handler(MessageHandler(filters.TEXT | filters.VOICE, handle_message))
     bot.job_queue.run_repeating(vigilar_sitio, interval=30, first=5)
-    print(f"🚀 KLMZ MAESTRO LISTO | DUEÑO: {ADMIN_ID}")
+    print(f"🚀 KLMZ LISTA | DUEÑO: {ADMIN_ID}")
     bot.run_polling()
